@@ -1,0 +1,9 @@
+[submodule "vmath"]
+	path = lib/vmath
+	url = https://github.com/axelf4/vmath.git
+[submodule "objparser"]
+	path = lib/objparser
+	url = https://github.com/axelf4/objparser.git
+[submodule "flexLayout"]
+	path = lib/flexLayout
+	url = https://github.com/axelf4/flexLayout.git
