@@ -5,6 +5,8 @@
 #include <vmath.h>
 #include "font.h"
 
+#include "linebreak.h"
+
 typedef struct Color {
 	float r, g, b, a;
 } Color;
@@ -40,6 +42,8 @@ void spriteRendererDrawCustom(struct SpriteRenderer *renderer, GLuint texture, f
 struct TextRenderer *textRendererCreate();
 
 void textRendererDraw(struct TextRenderer *renderer, struct SpriteRenderer *spriteRenderer, struct Font *font, const char *text, Color color, float x, float y);
+
+void textRendererDrawLayout(struct TextRenderer *renderer, struct SpriteRenderer *spriteRenderer, struct Layout *layout, Color color, float x, float y);
 
 void textRendererDestroy(struct TextRenderer *renderer);
 

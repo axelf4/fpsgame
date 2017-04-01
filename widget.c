@@ -1,17 +1,38 @@
 #include "widget.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 #define MAX(a, b) ((a) < (b) ? (b) : (a))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 void widgetInitialize(struct Widget *widget) {
-	widget->x = widget->y = widget->width = widget->height = widget->flags = 0;
+	widget->x = widget->y = widget->width = widget->height = 0;
+	widget->flags = WIDGET_FLAG_LAYOUT_REQUIRED;
 	widget->layoutParams = 0;
+	widget->parent = 0;
 }
 
 void widgetSetLayoutParams(struct Widget *widget, void *layoutParams) {
 	widget->layoutParams = layoutParams;
+}
+
+void widgetMarkValidated(struct Widget *widget) {
+	widget->flags &= ~WIDGET_FLAG_LAYOUT_REQUIRED;
+}
+
+void widgetRequestLayout(struct Widget *widget) {
+	widget->flags |= WIDGET_FLAG_LAYOUT_REQUIRED;
+
+	if (widget->parent) {
+		widgetRequestLayout(widget->parent);
+	}
+}
+
+void widgetValidate(struct Widget *widget, float width, float height) {
+	if (widget->flags & WIDGET_FLAG_LAYOUT_REQUIRED) {
+		widget->vtable->layout(widget, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
+	}
 }
 
 void containerInitialize(struct Container *container) {
@@ -24,8 +45,11 @@ void containerDestroy(struct Container *container) {
 	free(container->children);
 }
 
-void containerAddChild(struct Container *container, struct Widget *child) {
+void containerAddChild(struct Widget *widget, struct Widget *child) {
+	assert(!child->parent && "The child already has a parent.");
+	struct Container *container = (struct Container *) widget;
 	container->children[container->childCount++] = child;
+	child->parent = widget;
 }
 
 /**
@@ -95,6 +119,7 @@ static const struct LayoutContext layoutContext = {
 static void flexLayoutLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
 	struct FlexLayout *flexLayout = (struct FlexLayout *) widget;
 	layoutFlex(&layoutContext, widget, width, widthMode, height, heightMode, flexLayout->direction, flexLayout->justify);
+	widgetMarkValidated(widget);
 }
 
 static struct WidgetClass flexLayoutClass = {
@@ -106,42 +131,4 @@ void flexLayoutInitialize(struct FlexLayout *flexLayout, FlexDirection direction
 	((struct Widget *) flexLayout)->vtable = &flexLayoutClass;
 	flexLayout->direction = direction;
 	flexLayout->justify = justify;
-}
-
-static void testWidgetLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
-	printf("layouting rect\n");
-	if (widthMode == MEASURE_EXACTLY) {
-		widget->width = width;
-		printf("setting exaclty to %f\n", width);
-	} else if (widthMode == MEASURE_AT_MOST) {
-		widget->width = MIN(width, 100);
-	} else {
-		widget->width = 100;
-	}
-	if (heightMode == MEASURE_EXACTLY) {
-		widget->height = height;
-	} else if (heightMode == MEASURE_AT_MOST) {
-		widget->height = MIN(height, 100);
-	} else {
-		widget->height = 100;
-	}
-	printf("layouting widget to %f,%f from %f,%f\n", widget->width, widget->height, width, height);
-	printf("widthMode: %d, heightmode: %d\n", widthMode, heightMode);
-}
-
-static void testWidgetDraw(struct Widget *widget, struct SpriteRenderer *renderer) {
-	struct TestWidget *testWidget = (struct TestWidget *) widget;
-	spriteRendererDraw(renderer, testWidget->texture,
-			widget->x, widget->y,
-			widget->width, widget->height);
-}
-
-static struct WidgetClass testWidgetClass = {
-	testWidgetLayout, testWidgetDraw
-};
-
-void testWidgetInitialize(struct TestWidget *testWidget, GLuint texture) {
-	widgetInitialize((struct Widget *) testWidget);
-	testWidget->widget.vtable = &testWidgetClass;
-	testWidget->texture = texture;
 }

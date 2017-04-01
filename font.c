@@ -1,96 +1,50 @@
 #include "font.h"
-#include <ft2build.h>
-#include FT_FREETYPE_H
+#include <stdlib.h>
+#include <string.h>
+#include <hb-ft.h>
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "stb_rect_pack.h"
 
 struct Font *loadFont(char *filename, int width, int height) {
+	struct Font *font = malloc(sizeof(struct Font));
+	if (!font) {
+		return 0;
+	}
+
 	FT_Error error;
 	FT_Library library;
 	if (error = FT_Init_FreeType(&library)) {
 		fprintf(stderr, "Could not initialize FreeType.\n");
-		goto cleanup;
+		free(font);
+		return 0;
 	}
-	FT_Face face;
+	// FT_Face face;
 	// FT_New_Memory_Face(ft, data, dataSize, 0, &face);
-	if (error = FT_New_Face(library, filename, 0, &face)) {
+	if (error = FT_New_Face(library, filename, 0, &font->face)) {
 		fprintf(stderr, "Could not open font.\n");
-		goto cleanup_library;
+		return 0;
 	}
-	if (error = FT_Set_Char_Size(face, 0, 16 * 64, 300, 300)) {
-		fprintf(stderr, "Could set sizes.\n");
-		goto cleanup_face;
-	}
-
-	struct Font *font = malloc(sizeof(struct Font));
-	if (!font) {
-		goto cleanup_face;
+	const int fontSize = 24;
+	if (error = FT_Set_Char_Size(font->face, fontSize * 64, 0, 0, 0)) {
+		fprintf(stderr, "Could not set sizes.\n");
+		return 0;
 	}
 
-	FT_Size_Metrics metrics = face->size->metrics;
-	font->ascender = metrics.ascender;
-	font->descender = metrics.descender;
-	font->height = metrics.height;
-	font->lineGap = font->height - font->ascender + font->descender;
-	FT_GlyphSlot slot = face->glyph;
-
-	GLvoid *data = malloc(width * height);
-	if (!data) {
+	FT_Size_Metrics metrics = font->face->size->metrics;
+	font->ascender = metrics.ascender >> 6;
+	font->lineSpacing = metrics.height >> 6;
+	font->dataWidth = width;
+	font->dataHeight = height;
+	if (!(font->data = malloc(width * height))) {
 		fprintf(stderr, "Could not allocate image data.\n");
-		goto cleanup_face;
+		return 0;
 	}
-	struct stbrp_context stbrp_context;
 	const int numNodes = width;
-	struct stbrp_node *nodes = malloc(sizeof(struct stbrp_node) * numNodes);
-	stbrp_init_target(&stbrp_context, width, height, nodes, numNodes);
+	font->nodes = malloc(sizeof(struct stbrp_node) * numNodes);
+	stbrp_init_target(&font->stbrp_context, width, height, font->nodes, numNodes);
 
-	const char cache[] = " !\"#$%&'()*+,-./0123456789:;<=>?"
-		"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-		"`abcdefghijklmnopqrstuvwxyz{|}~";
-	size_t numGlyphs = strlen(cache);
-	struct Glyph *glyphs = malloc(sizeof(struct Glyph) * numGlyphs);
-	printf("Loading %d glyphs from %s.\n", numGlyphs, filename);
-	for (int i = 0; i < numGlyphs; ++i) {
-		const char c = cache[i];
-		if (error = FT_Load_Char(face, c, FT_LOAD_RENDER)) {
-			fprintf(stderr, "Could not load character.\n");
-			goto cleanup_face;
-		}
-		FT_Bitmap ft_bitmap = slot->bitmap;
-		unsigned int srcWidth = ft_bitmap.width,
-					 srcHeight = ft_bitmap.rows;
-
-		struct stbrp_rect rect;
-		rect.w = srcWidth;
-		rect.h = srcHeight;
-		stbrp_pack_rects(&stbrp_context, &rect, 1);
-		if (!rect.was_packed) {
-			fprintf(stderr, "Rect got REKT!\n");
-			goto cleanup_face;
-		}
-		unsigned char *dst = data + rect.x + width * rect.y,
-					  *src = ft_bitmap.buffer;
-		for (int i = 0; i < srcHeight; ++i) {
-			memcpy(dst, src, ft_bitmap.width);
-			dst += width;
-			src += ft_bitmap.pitch;
-		}
-
-		struct Glyph *glyph = glyphs + i;
-		glyph->character = c;
-		glyph->width = srcWidth;
-		glyph->height = srcHeight;
-		glyph->offsetX = slot->bitmap_left;
-		glyph->offsetY = slot->bitmap_top;
-		glyph->s0 = (float) rect.x / width;
-		glyph->t0 = (float) rect.y / height;
-		glyph->s1 = (float) (rect.x + glyph->width) / width;
-		glyph->t1 = (float) (rect.y + glyph->height) / height;
-		glyph->advanceX = slot->advance.x >> 6;
-		glyph->advanceY = slot->advance.y;
-		// TODO keming
-	}
-	free(nodes);
+	font->numGlyphs = 0;
+	font->glyphs = malloc(sizeof(struct Glyph) * (font->glyphCapacity = 64));
 
 	glGenTextures(1, &font->texture);
 	glBindTexture(GL_TEXTURE_2D, font->texture);
@@ -98,24 +52,78 @@ struct Font *loadFont(char *filename, int width, int height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data);
-	free(data);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, font->dataWidth, font->dataHeight, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
 
-	font->numGlyphs = numGlyphs;
-	font->glyphs = glyphs;
+	font->library = library;
+	font->hbFont = hb_ft_font_create_referenced(font->face);
 
 	return font;
+}
 
-cleanup_face:
-	FT_Done_Face(face);
-cleanup_library:
-	FT_Done_FreeType(library);
-cleanup:
-	return 0;
+struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint) {
+	struct Glyph *glyph = 0;
+	for (int i = 0; i < font->numGlyphs; ++i) {
+		if (font->glyphs[i].codepoint == codepoint) {
+			glyph = font->glyphs + i;
+			break;
+		}
+	}
+
+	if (!glyph) {
+		FT_Error error;
+		if (error = FT_Load_Glyph(font->face, codepoint, FT_LOAD_RENDER)) {
+			fprintf(stderr, "Could not load character.\n");
+			return 0;
+		}
+		FT_GlyphSlot slot = font->face->glyph;
+		FT_Bitmap ft_bitmap = slot->bitmap;
+		unsigned int srcWidth = ft_bitmap.width, srcHeight = ft_bitmap.rows;
+
+		struct stbrp_rect rect;
+		rect.w = srcWidth;
+		rect.h = srcHeight;
+		stbrp_pack_rects(&font->stbrp_context, &rect, 1);
+		if (!rect.was_packed) {
+			fprintf(stderr, "Rect got REKT!\n");
+			return 0;
+		}
+		unsigned char *dst = font->data + rect.x + font->dataWidth * rect.y, *src = ft_bitmap.buffer;
+		for (int i = 0; i < srcHeight; ++i) {
+			memcpy(dst, src, ft_bitmap.width);
+			dst += font->dataWidth;
+			src += ft_bitmap.pitch;
+		}
+
+		if (font->numGlyphs >= font->glyphCapacity) {
+			struct Glyph *tmp = realloc(font->glyphs, font->glyphCapacity *= 2);
+			if (!tmp) return 0;
+			font->glyphs = tmp;
+		}
+		struct Glyph *glyph = font->glyphs + font->numGlyphs++;
+		glyph->codepoint = codepoint;
+		glyph->width = srcWidth;
+		glyph->height = srcHeight;
+		glyph->offsetX = slot->bitmap_left;
+		glyph->offsetY = slot->bitmap_top;
+		glyph->s0 = (float) rect.x / font->dataWidth;
+		glyph->t0 = (float) rect.y / font->dataHeight;
+		glyph->s1 = (float) (rect.x + glyph->width) / font->dataWidth;
+		glyph->t1 = (float) (rect.y + glyph->height) / font->dataHeight;
+		glyph->advanceX = slot->advance.x >> 6;
+		glyph->advanceY = slot->advance.y;
+
+		glBindTexture(GL_TEXTURE_2D, font->texture);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, font->dataWidth, font->dataHeight, GL_RED, GL_UNSIGNED_BYTE, font->data);
+	}
+
+	return glyph;
 }
 
 void fontDestroy(struct Font *font) {
 	glDeleteTextures(1, &font->texture);
 	free(font->glyphs);
+	free(font->nodes);
+	FT_Done_Face(font->face);
+	FT_Done_FreeType(font->library);
 	free(font);
 }

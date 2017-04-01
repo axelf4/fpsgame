@@ -7,6 +7,10 @@
 
 struct Widget;
 
+enum {
+	WIDGET_FLAG_LAYOUT_REQUIRED = 0x1,
+};
+
 typedef struct WidgetClass {
 	void (*layout)(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode);
 	void (*draw)(struct Widget *widget, struct SpriteRenderer *renderer);
@@ -17,11 +21,21 @@ typedef struct Widget {
 	float x, y, width, height;
 	unsigned flags;
 	void *layoutParams;
+	struct Widget *parent;
 } Widget;
 
 void widgetInitialize(struct Widget *widget);
 
 void widgetSetLayoutParams(struct Widget *widget, void *layoutParams);
+
+void widgetMarkValidated(struct Widget *widget);
+
+void widgetRequestLayout(struct Widget *widget);
+
+/**
+ * Layout widget, if and only if needed, to the exact specified dimensions.
+ */
+void widgetValidate(struct Widget *widget, float width, float height);
 
 typedef struct Container {
 	struct Widget widget;
@@ -33,7 +47,7 @@ void containerInitialize(struct Container *container);
 
 void containerDestroy(struct Container *container);
 
-void containerAddChild(struct Container *container, struct Widget *child);
+void containerAddChild(struct Widget *container, struct Widget *child);
 
 typedef struct FlexLayout {
 	struct Container container;
@@ -42,12 +56,5 @@ typedef struct FlexLayout {
 } FlexLayout;
 
 void flexLayoutInitialize(struct FlexLayout *flexLayout, FlexDirection direction, Align justify);
-
-typedef struct TestWidget {
-	struct Widget widget;
-	GLuint texture;
-} TestWidget;
-
-void testWidgetInitialize(struct TestWidget *testWidget, GLuint texture);
 
 #endif

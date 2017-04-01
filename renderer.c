@@ -147,21 +147,21 @@ void spriteRendererDraw(struct SpriteRenderer *renderer, GLuint texture, float x
 	vertices[renderer->index + 0] = x0;
 	vertices[renderer->index + 1] = y0;
 	vertices[renderer->index + 2] = 0;
-	vertices[renderer->index + 3] = 1;
+	vertices[renderer->index + 3] = 0;
 
-	vertices[renderer->index + 4] = x1;
-	vertices[renderer->index + 5] = y0;
-	vertices[renderer->index + 6] = 1;
+	vertices[renderer->index + 4] = x0;
+	vertices[renderer->index + 5] = y1;
+	vertices[renderer->index + 6] = 0;
 	vertices[renderer->index + 7] = 1;
 
 	vertices[renderer->index + 8] = x1;
 	vertices[renderer->index + 9] = y1;
 	vertices[renderer->index + 10] = 1;
-	vertices[renderer->index + 11] = 0;
+	vertices[renderer->index + 11] = 1;
 
-	vertices[renderer->index + 12] = x0;
-	vertices[renderer->index + 13] = y1;
-	vertices[renderer->index + 14] = 0;
+	vertices[renderer->index + 12] = x1;
+	vertices[renderer->index + 13] = y0;
+	vertices[renderer->index + 14] = 1;
 	vertices[renderer->index + 15] = 0;
 	renderer->index += 16;
 }
@@ -179,20 +179,20 @@ void spriteRendererDrawCustom(struct SpriteRenderer *renderer, GLuint texture, f
 	vertices[renderer->index + 2] = s0;
 	vertices[renderer->index + 3] = t0;
 
-	vertices[renderer->index + 4] = x1;
-	vertices[renderer->index + 5] = y0;
-	vertices[renderer->index + 6] = s1;
-	vertices[renderer->index + 7] = t0;
+	vertices[renderer->index + 4] = x0;
+	vertices[renderer->index + 5] = y1;
+	vertices[renderer->index + 6] = s0;
+	vertices[renderer->index + 7] = t1;
 
 	vertices[renderer->index + 8] = x1;
 	vertices[renderer->index + 9] = y1;
 	vertices[renderer->index + 10] = s1;
 	vertices[renderer->index + 11] = t1;
 
-	vertices[renderer->index + 12] = x0;
-	vertices[renderer->index + 13] = y1;
-	vertices[renderer->index + 14] = s0;
-	vertices[renderer->index + 15] = t1;
+	vertices[renderer->index + 12] = x1;
+	vertices[renderer->index + 13] = y0;
+	vertices[renderer->index + 14] = s1;
+	vertices[renderer->index + 15] = t0;
 	renderer->index += 16;
 }
 
@@ -253,6 +253,42 @@ void textRendererDraw(struct TextRenderer *renderer, struct SpriteRenderer *spri
 					s0, t1, s1, t0);
 			x += glyph->advanceX;
 		}
+	}
+
+	spriteRendererSwitchProgram(spriteRenderer, 0);
+}
+
+void textRendererDrawLayout(struct TextRenderer *renderer, struct SpriteRenderer *spriteRenderer, struct Layout *layout, Color color, float x, float y) {
+	float r = color.r, g = color.g, b = color.b, a = color.a;
+	struct Font *font = layout->font;
+
+	spriteRendererSwitchProgram(spriteRenderer, renderer->program);
+	glUniform4f(glGetUniformLocation(renderer->program, "color"), r, g, b, a);
+
+	float penX = x;
+
+	for (int i = 0; i < layout->lineCount; ++i) {
+		struct LayoutLine line = layout->lines[i];
+		for (int j = 0; j < line.itemCount; ++j) {
+			struct GlyphString *glyphs = line.items[j]->glyphs;
+			for (int k = 0; k < glyphs->length; ++k) {
+				struct GlyphInfo info = glyphs->infos[k];
+				struct Glyph *glyph = fontGetGlyph(font, info.glyph);
+				if (glyph) {
+					int x0 = penX + info.xOffset,
+						// y0 = y - (glyph->height - glyph->offsetY),
+						y0 = y + font->ascender - glyph->offsetY,
+						x1 = x0 + glyph->width,
+						y1 = y0 + glyph->height;
+					spriteRendererDrawCustom(spriteRenderer, font->texture,
+							x0, y0, x1, y1,
+							glyph->s0, glyph->t0, glyph->s1, glyph->t1);
+					penX += info.width;
+				}
+			}
+		}
+		penX = x;
+		y += font->lineSpacing;
 	}
 
 	spriteRendererSwitchProgram(spriteRenderer, 0);
