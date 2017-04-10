@@ -35,13 +35,15 @@ void widgetValidate(struct Widget *widget, float width, float height) {
 	}
 }
 
-void containerInitialize(struct Container *container) {
-	widgetInitialize((struct Widget *) container);
+void containerInitialize(struct Widget *widget) {
+	struct Container *container = (struct Container *) widget;
+	widgetInitialize(widget);
 	container->childCount = 0;
 	container->children = malloc(sizeof(struct Widget *) * 8); // FIXME allow for resizing
 }
 
-void containerDestroy(struct Container *container) {
+void containerDestroy(struct Widget *widget) {
+	struct Container *container = (struct Container *) widget;
 	free(container->children);
 }
 
@@ -126,9 +128,10 @@ static struct WidgetClass flexLayoutClass = {
 	flexLayoutLayout, containerDraw
 };
 
-void flexLayoutInitialize(struct FlexLayout *flexLayout, FlexDirection direction, Align justify) {
-	containerInitialize((struct Container *) flexLayout);
-	((struct Widget *) flexLayout)->vtable = &flexLayoutClass;
+void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify) {
+	struct FlexLayout *flexLayout = (struct FlexLayout *) widget;
+	containerInitialize(widget);
+	widget->vtable = &flexLayoutClass;
 	flexLayout->direction = direction;
 	flexLayout->justify = justify;
 }

@@ -43,9 +43,9 @@ typedef struct Container {
 	struct Widget **children;
 } Container;
 
-void containerInitialize(struct Container *container);
+void containerInitialize(struct Widget *widget);
 
-void containerDestroy(struct Container *container);
+void containerDestroy(struct Widget *widget);
 
 void containerAddChild(struct Widget *container, struct Widget *child);
 
@@ -55,6 +55,6 @@ typedef struct FlexLayout {
 	Align justify;
 } FlexLayout;
 
-void flexLayoutInitialize(struct FlexLayout *flexLayout, FlexDirection direction, Align justify);
+void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify);
 
 #endif

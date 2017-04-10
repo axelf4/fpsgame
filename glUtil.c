@@ -1,5 +1,22 @@
 #include "glUtil.h"
+#include <stdlib.h>
 #include <stdio.h>
+
+char *readFile(const char *filename) {
+	char *buffer = 0;
+	FILE *f = fopen(filename, "rb");
+	if (f) {
+		fseek(f, 0, SEEK_END);
+		long length = ftell(f);
+		rewind(f); // fseek(f, 0, SEEK_SET);
+		if (buffer = malloc(length + 1)) {
+			fread(buffer, length, 1, f);
+			fclose(f);
+			buffer[length] = 0;
+		}
+	}
+	return buffer;
+}
 
 GLuint compileShader(GLenum type, const GLchar *source) {
 	GLuint shader = glCreateShader(type);

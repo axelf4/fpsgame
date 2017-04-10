@@ -218,11 +218,8 @@ int findLineBreak(enum BreakClass *pcls, enum BreakAction *pbrk, int length) {
 		}
 
 		// Lookup pair table information in breakPairs[before, after];
-		int first = lineBreakIndices[cls],
-		second = lineBreakIndices[pcls[i]];
-		if (first >= INDEX_END_OF_TABLE || second >= INDEX_END_OF_TABLE) {
-			assert(0);
-		}
+		int first = lineBreakIndices[cls], second = lineBreakIndices[pcls[i]];
+		assert(first < INDEX_END_OF_TABLE && second < INDEX_END_OF_TABLE && "Index out of bounds.");
 		enum BreakAction brk = breakPairs[lineBreakIndices[cls]][lineBreakIndices[pcls[i]]];
 		pbrk[i - 1] = brk; // save break action in output array
 
@@ -313,7 +310,7 @@ int isGraphemeClusterBreak(enum GraphemeBreakType previous, enum GraphemeBreakTy
 	return 1;
 }
 
-int glyphStringGetWidth(struct GlyphString *glyphs) {
+static int glyphStringGetWidth(struct GlyphString *glyphs) {
 	int width = 0;
 	for (int i = 0; i < glyphs->length; ++i) {
 		width += glyphs->infos[i].width;

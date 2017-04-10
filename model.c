@@ -2,22 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <objparser.h>
-
-char *readFile(const char *filename) {
-	printf("Loading file %s.\n", filename);
-	char *buffer = 0;
-	FILE *f = fopen(filename, "rb");
-	if (f) {
-		fseek(f, 0, SEEK_END);
-		long length = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		if ((buffer = malloc(length + 1)) == 0) return 0;
-		buffer[length] = 0;
-		if (buffer) fread(buffer, 1, length, f);
-		fclose(f);
-	}
-	return buffer;
-}
+#include "glUtil.h"
 
 void addVertexCB(void *prv, float x, float y, float z, float w) {
 	struct ObjBuilder *obj = prv;
