@@ -35,6 +35,10 @@ void widgetValidate(struct Widget *widget, float width, float height) {
 	}
 }
 
+void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer) {
+	widget->vtable->draw(widget, renderer);
+}
+
 void containerInitialize(struct Widget *widget) {
 	struct Container *container = (struct Container *) widget;
 	widgetInitialize(widget);
@@ -57,7 +61,7 @@ void containerAddChild(struct Widget *widget, struct Widget *child) {
 /**
  * Simply draws all children.
  */
-static void containerDraw(struct Widget *widget, struct SpriteRenderer *renderer) {
+static void containerDraw(struct Widget *widget, struct SpriteBatch *renderer) {
 	struct Container *container = (struct Container *) widget;
 	for (int i = 0; i < container->childCount; ++i) {
 		struct Widget *child = container->children[i];

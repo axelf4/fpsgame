@@ -77,11 +77,11 @@ static void imageLayout(struct Widget *widget, float widthSize, MeasureMode widt
 	widgetMarkValidated(widget);
 }
 
-static void imageDraw(struct Widget *widget, struct SpriteRenderer *renderer) {
+static void imageDraw(struct Widget *widget, struct SpriteBatch *renderer) {
 	struct Image *image = (struct Image *) widget;
 	image->imageX = 0;
 	image->imageY = 0;
-	spriteRendererDraw(renderer, image->texture,
+	spriteBatchDraw(renderer, image->texture,
 			widget->x + image->imageX, widget->y + image->imageY,
 			widget->width, widget->height);
 }

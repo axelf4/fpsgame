@@ -1,4 +1,4 @@
-#include "renderer.h"
+#include "spriteBatch.h"
 #include <stdlib.h>
 #include <string.h>
 #include "glUtil.h"
@@ -16,8 +16,8 @@ void alignedFree(void *ptr) {
 	_mm_free(ptr);
 }
 
-struct SpriteRenderer *spriteRendererCreate(int size) {
-	struct SpriteRenderer *renderer = alignedAlloc(sizeof(struct SpriteRenderer), 16);
+struct SpriteBatch *spriteBatchCreate(int size) {
+	struct SpriteBatch *renderer = alignedAlloc(sizeof(struct SpriteBatch), 16);
 	if (!renderer) {
 		return 0;
 	}
@@ -56,29 +56,48 @@ struct SpriteRenderer *spriteRendererCreate(int size) {
 		"void main() {"
 		"	vTexCoord = tex_coord;"
 		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
-		"}";
-	const GLchar *fragmentShaderSource = "uniform sampler2D texture;"
-		"varying vec4 vColor;"
-		"varying vec2 vTexCoord;"
-		"void main() {"
-		"	gl_FragColor = texture2D(texture, vTexCoord);"
-		"}";
+		"}",
+		*fragmentShaderSource = "uniform sampler2D texture;"
+			"varying vec4 vColor;"
+			"varying vec2 vTexCoord;"
+			"void main() {"
+			"	gl_FragColor = texture2D(texture, vTexCoord);"
+			"}";
 	renderer->defaultProgram = renderer->program =
 		createProgram(vertexShaderSource, fragmentShaderSource);
 	glLinkProgram(renderer->program);
 
+	const GLchar *textVertexShaderSource = "uniform mat4 projection;"
+		"attribute vec2 vertex;"
+		"attribute vec2 tex_coord;"
+		"varying vec2 vTexCoord;"
+		"void main() {"
+		"	vTexCoord = tex_coord;"
+		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
+		"}",
+		*textFragmentShaderSource = "uniform sampler2D texture;"
+			"uniform vec4 color;"
+			"varying vec2 vTexCoord;"
+			"void main() {"
+			"	float a = texture2D(texture, vTexCoord).r;"
+			"	gl_FragColor = vec4(color.rgb, color.a * a);"
+			"}";
+	renderer->textProgram = createProgram(textVertexShaderSource, textFragmentShaderSource);
+	glLinkProgram(renderer->textProgram);
+
 	return renderer;
 }
 
-void spriteRendererDestroy(struct SpriteRenderer *renderer) {
+void spriteBatchDestroy(struct SpriteBatch *renderer) {
 	glDeleteBuffers(1, &renderer->vertexObject);
 	glDeleteBuffers(1, &renderer->indexObject);
 	free(renderer->vertices);
 	glDeleteProgram(renderer->defaultProgram);
+	glDeleteProgram(renderer->textProgram);
 	alignedFree(renderer);
 }
 
-static void spriteRendererSetupProgram(struct SpriteRenderer *renderer) {
+static void spriteBatchSetupProgram(struct SpriteBatch *renderer) {
 	ALIGN(16) float mv[16];
 	glUniformMatrix4fv(glGetUniformLocation(renderer->program, "projection"), 1, 0, MatrixGet(mv, renderer->projectionMatrix));
 	glUniform1i(glGetUniformLocation(renderer->program, "texture"), 0);
@@ -86,7 +105,7 @@ static void spriteRendererSetupProgram(struct SpriteRenderer *renderer) {
 	renderer->texCoordAttrib = glGetAttribLocation(renderer->program, "tex_coord");
 }
 
-void spriteRendererBegin(struct SpriteRenderer *renderer) {
+void spriteBatchBegin(struct SpriteBatch *renderer) {
 	renderer->drawing = 1;
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vertexObject);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderer->indexObject);
@@ -94,13 +113,13 @@ void spriteRendererBegin(struct SpriteRenderer *renderer) {
 	glActiveTexture(GL_TEXTURE0);
 
 	glUseProgram(renderer->program);
-	spriteRendererSetupProgram(renderer);
+	spriteBatchSetupProgram(renderer);
 
 	glEnableVertexAttribArray(renderer->vertexAttrib);
 	glEnableVertexAttribArray(renderer->texCoordAttrib);
 }
 
-static void spriteRendererFlush(struct SpriteRenderer *renderer) {
+static void spriteBatchFlush(struct SpriteBatch *renderer) {
 	if (renderer->index == 0) return;
 	GLsizei stride = sizeof(float) * 4;
 	glVertexAttribPointer(renderer->vertexAttrib, 2, GL_FLOAT, GL_FALSE, stride, 0);
@@ -110,36 +129,36 @@ static void spriteRendererFlush(struct SpriteRenderer *renderer) {
 	renderer->index = 0;
 }
 
-void spriteRendererEnd(struct SpriteRenderer *renderer) {
-	spriteRendererFlush(renderer);
+void spriteBatchEnd(struct SpriteBatch *renderer) {
+	spriteBatchFlush(renderer);
 	glDisableVertexAttribArray(renderer->vertexAttrib);
 	glDisableVertexAttribArray(renderer->texCoordAttrib);
 	renderer->lastTexture = 0;
 	renderer->drawing = 0;
 }
 
-void spriteRendererSwitchProgram(struct SpriteRenderer *renderer, GLuint program) {
+void spriteBatchSwitchProgram(struct SpriteBatch *renderer, GLuint program) {
 	if (renderer->drawing) {
-		spriteRendererFlush(renderer);
+		spriteBatchFlush(renderer);
 	}
 	renderer->program = program ? program : renderer->defaultProgram;
 	if (renderer->drawing) {
 		glUseProgram(renderer->program);
-		spriteRendererSetupProgram(renderer);
+		spriteBatchSetupProgram(renderer);
 	}
 }
 
-static void spriteRendererSwitchTexture(struct SpriteRenderer *renderer, GLuint texture) {
-	spriteRendererFlush(renderer);
+static void spriteBatchSwitchTexture(struct SpriteBatch *renderer, GLuint texture) {
+	spriteBatchFlush(renderer);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	renderer->lastTexture = texture;
 }
 
-void spriteRendererDraw(struct SpriteRenderer *renderer, GLuint texture, float x, float y, float width, float height) {
+void spriteBatchDraw(struct SpriteBatch *renderer, GLuint texture, float x, float y, float width, float height) {
 	if (texture != renderer->lastTexture) {
-		spriteRendererSwitchTexture(renderer, texture);
+		spriteBatchSwitchTexture(renderer, texture);
 	} else if (renderer->index == renderer->maxVertices) {
-		spriteRendererFlush(renderer);
+		spriteBatchFlush(renderer);
 	}
 
 	float x0 = x, y0 = y, x1 = x + width, y1 = y + height;
@@ -166,11 +185,11 @@ void spriteRendererDraw(struct SpriteRenderer *renderer, GLuint texture, float x
 	renderer->index += 16;
 }
 
-void spriteRendererDrawCustom(struct SpriteRenderer *renderer, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1) {
+void spriteBatchDrawCustom(struct SpriteBatch *renderer, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1) {
 	if (texture != renderer->lastTexture) {
-		spriteRendererSwitchTexture(renderer, texture);
+		spriteBatchSwitchTexture(renderer, texture);
 	} else if (renderer->index == renderer->maxVertices) {
-		spriteRendererFlush(renderer);
+		spriteBatchFlush(renderer);
 	}
 
 	float *vertices = renderer->vertices;
@@ -196,74 +215,12 @@ void spriteRendererDrawCustom(struct SpriteRenderer *renderer, GLuint texture, f
 	renderer->index += 16;
 }
 
-struct TextRenderer {
-	GLuint program;
-};
-
-struct TextRenderer *textRendererCreate() {
-	struct TextRenderer *renderer = malloc(sizeof(struct TextRenderer));
-	if (!renderer) {
-		return 0;
-	}
-
-	const GLchar *vertexShaderSource = "uniform mat4 projection;"
-		"attribute vec2 vertex;"
-		"attribute vec2 tex_coord;"
-		"varying vec2 vTexCoord;"
-		"void main() {"
-		"	vTexCoord = tex_coord;"
-		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
-		"}";
-	const GLchar *fragmentShaderSource = "uniform sampler2D texture;"
-		"uniform vec4 color;"
-		"varying vec2 vTexCoord;"
-		"void main() {"
-		"	float a = texture2D(texture, vTexCoord).r;"
-		"	gl_FragColor = vec4(color.rgb, color.a * a);"
-		"}";
-	renderer->program = createProgram(vertexShaderSource, fragmentShaderSource);
-	glLinkProgram(renderer->program);
-
-	return renderer;
-}
-
-void textRendererDraw(struct TextRenderer *renderer, struct SpriteRenderer *spriteRenderer, struct Font *font, const char *text, Color color, float x, float y) {
-	float r = color.r, g = color.g, b = color.b, a = color.a;
-
-	spriteRendererSwitchProgram(spriteRenderer, renderer->program);
-	glUniform4f(glGetUniformLocation(renderer->program, "color"), r, g, b, a);
-
-	for (size_t i = 0, length = strlen(text); i < length; ++i) {
-		char c = text[i];
-		struct Glyph *glyph;
-		for (int j = 0; j < font->numGlyphs; ++j) {
-			if (font->glyphs[j].character == c) glyph = font->glyphs + j;
-		}
-		if (glyph) {
-			/*if (i > 0) {
-				x += texture_glyph_get_kerning(glyph, text + i - 1);
-			}*/
-			int x0 = x + glyph->offsetX,
-				y0 = y + glyph->offsetY,
-				x1 = x0 + glyph->width,
-				y1 = y0 - glyph->height;
-			float s0 = glyph->s0, t0 = glyph->t0, s1 = glyph->s1, t1 = glyph->t1;
-			spriteRendererDrawCustom(spriteRenderer, font->texture,
-					x0, y1, x1, y0,
-					s0, t1, s1, t0);
-			x += glyph->advanceX;
-		}
-	}
-
-	spriteRendererSwitchProgram(spriteRenderer, 0);
-}
-
-void textRendererDrawLayout(struct TextRenderer *renderer, struct SpriteRenderer *spriteRenderer, struct Layout *layout, Color color, float x, float y) {
+void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, Color color, float x, float y) {
 	float r = color.r, g = color.g, b = color.b, a = color.a;
 	struct Font *font = layout->font;
 
-	spriteRendererSwitchProgram(spriteRenderer, renderer->program);
-	glUniform4f(glGetUniformLocation(renderer->program, "color"), r, g, b, a);
+	spriteBatchSwitchProgram(batch, batch->textProgram);
+	glUniform4f(glGetUniformLocation(batch->textProgram, "color"), r, g, b, a);
 
 	float penX = x;
 
@@ -276,11 +233,10 @@ void textRendererDrawLayout(struct TextRenderer *renderer, struct SpriteRenderer
 				struct Glyph *glyph = fontGetGlyph(font, info.glyph);
 				if (glyph) {
 					int x0 = penX + info.xOffset,
-						// y0 = y - (glyph->height - glyph->offsetY),
 						y0 = y + font->ascender - glyph->offsetY,
 						x1 = x0 + glyph->width,
 						y1 = y0 + glyph->height;
-					spriteRendererDrawCustom(spriteRenderer, font->texture,
+					spriteBatchDrawCustom(batch, font->texture,
 							x0, y0, x1, y1,
 							glyph->s0, glyph->t0, glyph->s1, glyph->t1);
 					penX += info.width;
@@ -291,10 +247,5 @@ void textRendererDrawLayout(struct TextRenderer *renderer, struct SpriteRenderer
 		y += font->lineSpacing;
 	}
 
-	spriteRendererSwitchProgram(spriteRenderer, 0);
-}
-
-void textRendererDestroy(struct TextRenderer *renderer) {
-	glDeleteProgram(renderer->program);
-	free(renderer);
+	spriteBatchSwitchProgram(batch, 0);
 }

@@ -18,15 +18,17 @@ add_executable(fpsgame
 	main.c
 	pngloader.h pngloader.c
 	model.h model.c
-	widget.h widget.c
 	stb_rect_pack.h
 	glUtil.h glUtil.c
 	font.h font.c
-	renderer.h renderer.c
+	spriteBatch.h spriteBatch.c
 	linebreak.h linebreak.c
+	widget.h widget.c
 	label.h label.c
 	image.h image.c
-	ddsloader.h ddsloader.c)
+	ddsloader.h ddsloader.c
+	state.h state.c
+	gameState.h gameState.c)
 
 include_directories(
 	${objparser_SOURCE_DIR}/include

@@ -92,14 +92,11 @@ struct Model *loadModelFromObj(const char *path) {
 	struct ObjParserContext context = { &obj, addVertexCB, addTexcoordCB, addNormalCB, addFaceCB, addGroupCB, 0, 0, mallocCB, freeCB, OBJ_TRIANGULATE };
 	objParse(&context, buffer);
 
-	unsigned int vertexCount, indexCount = 0;
-	GLfloat *vertices;
-	unsigned int *indices;
+	unsigned int vertexCount = 0, indexCount = 0;
 	// Assume that each face is a triangle
-	vertices = malloc(sizeof(float) * obj.numFaces * 3 * (3 + 2 * obj.texcoordsSize + 3 * obj.normalsSize));
-	indices = malloc(sizeof(unsigned int) * obj.numFaces * 3);
-	unsigned k = 0;
-	for (unsigned face = 0; face < obj.numFaces; ++face) {
+	GLfloat *vertices = vertices = malloc(sizeof(float) * obj.numFaces * 3 * (3 + 2 * obj.texcoordsSize + 3 * obj.normalsSize));
+	unsigned int *indices = malloc(sizeof(unsigned int) * obj.numFaces * 3);
+	for (unsigned face = 0, k = 0; face < obj.numFaces; ++face) {
 		for (unsigned i = 0; i < 3; ++i) {
 			struct ObjVertexIndex vi = obj.indices[indexCount];
 			unsigned int vertexIndex = vi.vertexIndex * 3, texcoordIndex = vi.texcoordIndex * 2, normalIndex = vi.normalIndex * 3;

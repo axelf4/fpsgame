@@ -31,10 +31,10 @@ static void labelLayout(struct Widget *widget, float width, MeasureMode widthMod
 	widgetMarkValidated(widget);
 }
 
-static void labelDraw(struct Widget *widget, struct SpriteRenderer *renderer) {
+static void labelDraw(struct Widget *widget, struct SpriteBatch *batch) {
 	struct Label *label = (struct Label *) widget;
 	Color color = {0.96, 0.82, 0.3, 1};
-	textRendererDrawLayout(label->textRenderer, renderer, label->layout, color,
+	spriteBatchDrawLayout(batch, label->layout, color,
 			widget->x, widget->y);
 }
 
@@ -42,12 +42,11 @@ static struct WidgetClass labelClass = {
 	labelLayout, labelDraw
 };
 
-struct Widget *labelNew(struct Font *font, struct TextRenderer *textRenderer, const char *text) {
+struct Widget *labelNew(struct Font *font, const char *text) {
 	struct Label *label = malloc(sizeof(struct Label));
 	widgetInitialize((struct Widget *) label);
 	label->widget.vtable = &labelClass;
 	label->font = font;
-	label->textRenderer = textRenderer;
 	label->layout = malloc(sizeof(struct Layout));
 	layoutInit(label->layout, font);
 	layoutSetText(label->layout, text, -1);

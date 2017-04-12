@@ -3,17 +3,17 @@
 
 #include <flexLayout.h>
 #include <GL/glew.h>
-#include "renderer.h"
-
-struct Widget;
+#include "spriteBatch.h"
 
 enum {
 	WIDGET_FLAG_LAYOUT_REQUIRED = 0x1,
 };
 
+struct Widget;
+
 typedef struct WidgetClass {
 	void (*layout)(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode);
-	void (*draw)(struct Widget *widget, struct SpriteRenderer *renderer);
+	void (*draw)(struct Widget *widget, struct SpriteBatch *renderer);
 } WidgetClass;
 
 typedef struct Widget {
@@ -36,6 +36,8 @@ void widgetRequestLayout(struct Widget *widget);
  * Layout widget, if and only if needed, to the exact specified dimensions.
  */
 void widgetValidate(struct Widget *widget, float width, float height);
+
+void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer);
 
 typedef struct Container {
 	struct Widget widget;
