@@ -4,9 +4,9 @@
 #include <objparser.h>
 #include "glUtil.h"
 
-void addVertexCB(void *prv, float x, float y, float z, float w) {
+static void addVertexCB(void *prv, float x, float y, float z, float w) {
 	struct ObjBuilder *obj = prv;
-	if (obj->verticesSize + 3 >= obj->verticesCapacity) {
+	if (obj->verticesSize + 3 > obj->verticesCapacity) {
 		float *tmp = realloc(obj->vertices, sizeof(float) * (obj->verticesCapacity *= 2));
 		// if (!tmp) goto error;
 		obj->vertices = tmp;
@@ -16,9 +16,9 @@ void addVertexCB(void *prv, float x, float y, float z, float w) {
 	obj->vertices[obj->verticesSize++] = z;
 }
 
-void addTexcoordCB(void *prv, float x, float y, float z) {
+static void addTexcoordCB(void *prv, float x, float y, float z) {
 	struct ObjBuilder *obj = prv;
-	if (obj->texcoordsSize + 3 >= obj->texcoordsCapacity) {
+	if (obj->texcoordsSize + 3 > obj->texcoordsCapacity) {
 		float *tmp = realloc(obj->texcoords, sizeof(float) * (obj->texcoordsCapacity *= 2));
 		// if (!tmp) goto error;
 		obj->texcoords = tmp;
@@ -28,9 +28,9 @@ void addTexcoordCB(void *prv, float x, float y, float z) {
 	obj->texcoords[obj->texcoordsSize++] = z;
 }
 
-void addNormalCB(void *prv, float x, float y, float z) {
+static void addNormalCB(void *prv, float x, float y, float z) {
 	struct ObjBuilder *obj = prv;
-	if (obj->normalsSize + 3 >= obj->normalsCapacity) {
+	if (obj->normalsSize + 3 > obj->normalsCapacity) {
 		float *tmp = realloc(obj->normals, sizeof(float) * (obj->normalsCapacity *= 2));
 		// if (!tmp) goto error;
 		obj->normals = tmp;
@@ -40,9 +40,9 @@ void addNormalCB(void *prv, float x, float y, float z) {
 	obj->normals[obj->normalsSize++] = z;
 }
 
-void addFaceCB(void *prv, int numVertices, struct ObjVertexIndex *indices) {
+static void addFaceCB(void *prv, int numVertices, struct ObjVertexIndex *indices) {
 	struct ObjBuilder *obj = prv;
-	if (obj->indicesSize + 3 >= obj->indicesCapacity) {
+	if (obj->indicesSize + numVertices > obj->indicesCapacity) {
 		struct ObjVertexIndex *tmp = realloc(obj->indices, sizeof(struct ObjVertexIndex) * (obj->indicesCapacity *= 2));
 		// if (!tmp) goto error;
 		obj->indices = tmp;
@@ -53,18 +53,18 @@ void addFaceCB(void *prv, int numVertices, struct ObjVertexIndex *indices) {
 	++obj->numFaces;
 }
 
-void addGroupCB(void *prv, int numNames, char **names) {
+static void addGroupCB(void *prv, int numNames, char **names) {
 	struct ObjBuilder *obj = prv;
 	printf("group name: %s.\n", *names);
 }
-void mtllib(void *prv, char *path) {}
-void usemtl(void *prv, char *name) {}
+static void mtllib(void *prv, char *path) {}
+static void usemtl(void *prv, char *name) {}
 
-void *mallocCB(size_t size) {
+static void *mallocCB(size_t size) {
 	return malloc(size);
 }
 
-void freeCB(void *ptr) {
+static void freeCB(void *ptr) {
 	free(ptr);
 }
 
@@ -91,6 +91,8 @@ struct Model *loadModelFromObj(const char *path) {
 	obj.indices = malloc(sizeof(struct ObjVertexIndex) * obj.indicesCapacity);
 	struct ObjParserContext context = { &obj, addVertexCB, addTexcoordCB, addNormalCB, addFaceCB, addGroupCB, 0, 0, mallocCB, freeCB, OBJ_TRIANGULATE };
 	objParse(&context, buffer);
+
+	printf("numFaces: %d\n", obj.numFaces);
 
 	unsigned int vertexCount = 0, indexCount = 0;
 	// Assume that each face is a triangle

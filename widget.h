@@ -37,11 +37,13 @@ void widgetRequestLayout(struct Widget *widget);
  */
 void widgetValidate(struct Widget *widget, float width, float height);
 
+void widgetLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode);
+
 void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer);
 
 typedef struct Container {
 	struct Widget widget;
-	int childCount;
+	int childCount, childCapacity;
 	struct Widget **children;
 } Container;
 

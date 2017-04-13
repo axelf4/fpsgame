@@ -5,6 +5,8 @@
 #include <gl/glew.h>
 #include "spriteBatch.h"
 #include "model.h"
+#include "font.h"
+#include "widget.h"
 
 typedef struct GameState {
 	struct State state;
@@ -21,7 +23,10 @@ typedef struct GameState {
 	VECTOR position;
 	float yaw, pitch;
 	struct Model *objModel;
+	struct Model *groundModel;
 
+	struct Font *font;
+	struct Widget *flexLayout, *image0, *image1, *label;
 	GLuint cat;
 } GameState;
 

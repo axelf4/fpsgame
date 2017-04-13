@@ -35,15 +35,19 @@ void widgetValidate(struct Widget *widget, float width, float height) {
 	}
 }
 
-void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer) {
-	widget->vtable->draw(widget, renderer);
+void widgetLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+	widget->vtable->layout(widget, width, widthMode, height, heightMode);
+}
+
+void widgetDraw(struct Widget *widget, struct SpriteBatch *batch) {
+	widget->vtable->draw(widget, batch);
 }
 
 void containerInitialize(struct Widget *widget) {
 	struct Container *container = (struct Container *) widget;
 	widgetInitialize(widget);
 	container->childCount = 0;
-	container->children = malloc(sizeof(struct Widget *) * 8); // FIXME allow for resizing
+	container->children = malloc(sizeof(struct Widget *) * (container->childCapacity = 4));
 }
 
 void containerDestroy(struct Widget *widget) {
@@ -54,6 +58,13 @@ void containerDestroy(struct Widget *widget) {
 void containerAddChild(struct Widget *widget, struct Widget *child) {
 	assert(!child->parent && "The child already has a parent.");
 	struct Container *container = (struct Container *) widget;
+	if (container->childCount >= container->childCapacity) {
+		struct Widget **tmp = realloc(container->children, container->childCapacity *= 2);
+		if (!tmp) {
+			printf("Failed to resize children array.\n");
+		}
+		container->children = tmp;
+	}
 	container->children[container->childCount++] = child;
 	child->parent = widget;
 }
@@ -69,57 +80,57 @@ static void containerDraw(struct Widget *widget, struct SpriteBatch *renderer) {
 	}
 }
 
-static void widgetSetX(const void *widget, float x) {
+static void layoutContextWidgetSetX(const void *widget, float x) {
 	((struct Widget *) widget)->x = x;
 }
 
-static void widgetSetY(const void *widget, float y) {
+static void layoutContextWidgetSetY(const void *widget, float y) {
 	((struct Widget *) widget)->y = y;
 }
 
-static float widgetGetWidth(const void *widget) {
+static float layoutContextWidgetGetWidth(const void *widget) {
 	return ((struct Widget *) widget)->width;
 }
 
-static void widgetSetWidth(const void *widget, float width) {
+static void layoutContextWidgetSetWidth(const void *widget, float width) {
 	((struct Widget *) widget)->width = width;
 }
 
-static float widgetGetHeight(const void *widget) {
+static float layoutContextWidgetGetHeight(const void *widget) {
 	return ((struct Widget *) widget)->height;
 }
 
-static void widgetSetHeight(const void *widget, float height) {
+static void layoutContextWidgetSetHeight(const void *widget, float height) {
 	((struct Widget *) widget)->height = height;
 }
 
-static void widgetLayout(const void *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void layoutContextWidgetLayout(const void *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
 	((struct Widget *) widget)->vtable->layout((struct Widget *) widget, width, widthMode, height, heightMode);
 }
 
-static int widgetGetChildCount(const void *widget) {
+static int layoutContextWidgetGetChildCount(const void *widget) {
 	return ((struct Container *) widget)->childCount;
 }
 
-static void *widgetGetChildAt(const void *widget, int index) {
+static void *layoutContextWidgetGetChildAt(const void *widget, int index) {
 	return ((struct Container *) widget)->children[index];
 }
 
-static void *widgetGetLayoutParams(const void *widget) {
+static void *layoutContextWidgetGetLayoutParams(const void *widget) {
 	return ((struct Widget *) widget)->layoutParams;
 }
 
 static const struct LayoutContext layoutContext = {
-	widgetSetX,
-	widgetSetY,
-	widgetGetWidth,
-	widgetSetWidth,
-	widgetGetHeight,
-	widgetSetHeight,
-	widgetLayout,
-	widgetGetChildCount,
-	widgetGetChildAt,
-	widgetGetLayoutParams,
+	layoutContextWidgetSetX,
+	layoutContextWidgetSetY,
+	layoutContextWidgetGetWidth,
+	layoutContextWidgetSetWidth,
+	layoutContextWidgetGetHeight,
+	layoutContextWidgetSetHeight,
+	layoutContextWidgetLayout,
+	layoutContextWidgetGetChildCount,
+	layoutContextWidgetGetChildAt,
+	layoutContextWidgetGetLayoutParams,
 };
 
 static void flexLayoutLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
