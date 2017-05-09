@@ -15,7 +15,7 @@ int main(int argc, char *arcv[]) {
 		printf("SDL_Init Error: %s\n", SDL_GetError());
 		return 1;
 	}
-	// SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
+	SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
 	SDL_Window *window;
 	if (!(window = SDL_CreateWindow("Hello", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE))) {
 		fprintf(stderr, "SDL_CreateWindow Error: %s\n", SDL_GetError());
@@ -28,7 +28,7 @@ int main(int argc, char *arcv[]) {
 		printf("glewInit Error: %s\n", glewGetErrorString(err));
 	}
 
-	glEnable(GL_CULL_FACE);
+	// glEnable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glClearColor(0.3, 0.7, 0.1, 1.0);
@@ -64,6 +64,11 @@ int main(int argc, char *arcv[]) {
 
 		manager.state->update(manager.state, 1);
 		manager.state->draw(manager.state, 1);
+
+		GLenum error;
+		while ((error = glGetError()) != GL_NO_ERROR) {
+			fprintf(stderr, "OpenGL error: %d\n", error);
+		}
 
 		SDL_GL_SwapWindow(window);
 	}

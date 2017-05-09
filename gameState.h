@@ -25,6 +25,9 @@ typedef struct GameState {
 	struct Model *objModel;
 	struct Model *groundModel;
 
+	GLuint depthMapFbo, depthMap;
+	GLuint depthProgram;
+
 	struct Font *font;
 	struct Widget *flexLayout, *image0, *image1, *label;
 	GLuint cat;

@@ -9,7 +9,9 @@
 #include "label.h"
 
 #define MOUSE_SENSITIVITY 0.006f
-#define MOVEMENT_SPEED .05f
+#define MOVEMENT_SPEED .05f * 5
+
+static const GLuint SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 
 static void gameStateUpdate(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
@@ -21,9 +23,9 @@ static void gameStateUpdate(struct State *state, float dt) {
 	else if (gameState->yaw < -M_PI) gameState->yaw += 2 * M_PI;
 	if (gameState->pitch > M_PI / 2) gameState->pitch = M_PI / 2;
 	else if (gameState->pitch < -M_PI / 2) gameState->pitch = -M_PI / 2;
-	VECTOR forward = VectorSet(-MOVEMENT_SPEED * sin(gameState->yaw), 0, -MOVEMENT_SPEED * cos(gameState->yaw), 0),
+	VECTOR forward = VectorSet(-MOVEMENT_SPEED * sin(gameState->yaw) * dt, 0, -MOVEMENT_SPEED * cos(gameState->yaw) * dt, 0),
 		   up = VectorSet(0, 1, 0, 0),
-		   right = Vector3Cross(forward, up);
+		   right = VectorCross(forward, up);
 	const Uint8 *keys = SDL_GetKeyboardState(NULL);
 	VECTOR position = gameState->position;
 	if (keys[SDL_SCANCODE_W]) position = VectorAdd(position, forward);
@@ -35,43 +37,117 @@ static void gameStateUpdate(struct State *state, float dt) {
 	gameState->position = position;
 }
 
+MATRIX lookAt(VECTOR eye, VECTOR center, VECTOR up) {
+	ALIGN(16) float eyeV[4], centerV[4], upV[4];
+	VectorGet(eyeV, eye);
+	VectorGet(centerV, center);
+	VectorGet(upV, up);
+
+	float z0 = eyeV[0] - centerV[0];
+	float z1 = eyeV[1] - centerV[1];
+	float z2 = eyeV[2] - centerV[2];
+
+	float len = 1 / sqrt(z0 * z0 + z1 * z1 + z2 * z2);
+	z0 *= len;
+	z1 *= len;
+	z2 *= len;
+
+	float x0 = upV[1] * z2 - upV[2] * z1,
+		  x1 = upV[2] * z0 - upV[0] * z2,
+		  x2 = upV[0] * z1 - upV[1] * z0;
+	len = sqrt(x0 * x0 + x1 * x1 + x2 * x2);
+	if (len) {
+		len = 1 / len;
+		x0 *= len;
+		x1 *= len;
+		x2 *= len;
+	} else {
+		x0 = x1 = x2 = 0;
+	}
+
+	float y0 = z1 * x2 - z2 * x1,
+		  y1 = z2 * x0 - z0 * x2,
+		  y2 = z0 * x1 - z1 * x0;
+	len = sqrt(y0 * y0 + y1 * y1 + y2 * y2);
+	if (len) {
+		len = 1 / len;
+		y0 *= len;
+		y1 *= len;
+		y2 *= len;
+	} else {
+		y0 = y1 = y2 = 0;
+	}
+
+	return MatrixSet(x0, y0, z0, 0,
+			x1, y1, z1, 0,
+			x2, y2, z2, 0,
+			-(x0 * eyeV[0] + x1 * eyeV[1] + x2 * eyeV[2]), -(y0 * eyeV[0] + y1 * eyeV[1] + y2 * eyeV[2]), -(z0 * eyeV[0] + z1 * eyeV[1] + z2 * eyeV[2]), 1);
+}
+
 static void gameStateDraw(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
 	struct SpriteBatch *batch = gameState->batch;
-
-	// Clear the screen
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	ALIGN(16) float vv[4], mv[16];
+
+	// Render to depth map
+	glEnable(GL_DEPTH_TEST);
+	glCullFace(GL_FRONT); // Avoid peter-panning
+	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	glBindFramebuffer(GL_FRAMEBUFFER, gameState->depthMapFbo);
+	glClear(GL_DEPTH_BUFFER_BIT);
+
+	const MATRIX lightProjection = MatrixOrtho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f);
+	const MATRIX lightView = lookAt(VectorSet(-2.0f, 4.0f, -1.0f, 0.0f), VectorSet(0.0f, 0.0f, 0.0f, 0.0f), VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+	const MATRIX lightMVP = MatrixMultiply(lightProjection, lightView);
+	// const MATRIX lightMVP = MatrixMultiply(lightView, lightProjection);
+	glUseProgram(gameState->depthProgram);
+	glUniformMatrix4fv(glGetUniformLocation(gameState->depthProgram, "lightMVP"), 1, GL_FALSE, MatrixGet(mv, lightMVP));
+
+	// RenderScene();
+	// Draw the model
+	const GLuint attrib = glGetAttribLocation(gameState->depthProgram, "position");
+	glEnableVertexAttribArray(attrib);
+
+	glBindBuffer(GL_ARRAY_BUFFER, gameState->objModel->vertexBuffer);
+	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->objModel->indexBuffer);
+	glDrawElements(GL_TRIANGLES, gameState->objModel->indexCount, GL_UNSIGNED_INT, 0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, gameState->groundModel->vertexBuffer);
+	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->groundModel->indexBuffer);
+	glDrawElements(GL_TRIANGLES, gameState->groundModel->indexCount, GL_UNSIGNED_INT, 0);
+
+	glDisableVertexAttribArray(attrib);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glCullFace(GL_BACK);
+
+	// Main pass: render scene as normal with shadow mapping (using depth map)
+	glViewport(0, 0, 800, 600);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the screen
+
 	MATRIX rotationViewMatrix = MatrixRotationQuaternion(QuaternionRotationRollPitchYaw(gameState->pitch, gameState->yaw, 0));
 	gameState->view = MatrixInverse(MatrixMultiply(
-				rotationViewMatrix,
-				MatrixTranslationFromVector(gameState->position)
-				));
-
-	// Draw the skybox
-	MATRIX modelView = MatrixMultiply(gameState->model, gameState->view);
-	glUseProgram(gameState->skyboxProgram);
-	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "invProjection"), 1, GL_FALSE, MatrixGet(mv, MatrixInverse(gameState->projection)));
-	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "modelView"), 1, GL_FALSE, MatrixGet(mv, modelView));
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, gameState->skyboxTexture);
-	glBindBuffer(GL_ARRAY_BUFFER, gameState->skyboxVertexBuffer);
-	glEnableVertexAttribArray(glGetAttribLocation(gameState->skyboxProgram, "vertex"));
-	glVertexAttribPointer(glGetAttribLocation(gameState->skyboxProgram, "vertex"), 2, GL_FLOAT, GL_FALSE, 0, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->skyboxIndexBuffer);
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+				MatrixTranslationFromVector(gameState->position),
+				rotationViewMatrix));
+	MATRIX modelView = MatrixMultiply(gameState->view, gameState->model);
 
 	// Draw the model
 	glUseProgram(gameState->program);
 	glUniformMatrix4fv(gameState->viewUniform, 1, GL_FALSE, MatrixGet(mv, gameState->view));
+	// glUniformMatrix4fv(gameState->viewUniform, 1, GL_FALSE, MatrixGet(mv, lightView));
+	glUniformMatrix4fv(glGetUniformLocation(gameState->program, "lightMVP"), 1, GL_FALSE, MatrixGet(mv, lightMVP));
 	glEnableVertexAttribArray(gameState->posAttrib);
 
-	/*struct Model *model = gameState->objModel;
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, gameState->depthMap);
+	glUniform1i(glGetUniformLocation(gameState->program, "depthMap"), 0);
+
+	struct Model *model = gameState->objModel;
 	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
 	glVertexAttribPointer(gameState->posAttrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-	glDrawElements(GL_TRIANGLES, model->indexCount, GL_UNSIGNED_INT, 0);*/
+	glDrawElements(GL_TRIANGLES, model->indexCount, GL_UNSIGNED_INT, 0);
 
 	struct Model *groundModel = gameState->groundModel;
 	glBindBuffer(GL_ARRAY_BUFFER, groundModel->vertexBuffer);
@@ -81,11 +157,27 @@ static void gameStateDraw(struct State *state, float dt) {
 
 	glDisableVertexAttribArray(gameState->posAttrib);
 
+	// Draw the skybox
+	glUseProgram(gameState->skyboxProgram);
+	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "invProjection"), 1, GL_FALSE, MatrixGet(mv, MatrixInverse(gameState->projection)));
+	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "modelView"), 1, GL_FALSE, MatrixGet(mv, modelView));
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, gameState->skyboxTexture);
+	glBindBuffer(GL_ARRAY_BUFFER, gameState->skyboxVertexBuffer);
+	glEnableVertexAttribArray(glGetAttribLocation(gameState->skyboxProgram, "vertex"));
+	glVertexAttribPointer(glGetAttribLocation(gameState->skyboxProgram, "vertex"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->skyboxIndexBuffer);
+	glDepthFunc(GL_LEQUAL);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	glDepthFunc(GL_LESS);
+
 	// Draw GUI
 	spriteBatchBegin(batch);
 
-	widgetValidate(gameState->flexLayout, 800, 600);
-	widgetDraw(gameState->flexLayout, batch);
+	// spriteBatchDraw(batch, gameState->depthMap, 0, 0, 800, 600);
+
+	// widgetValidate(gameState->flexLayout, 800, 600);
+	// widgetDraw(gameState->flexLayout, batch);
 
 	spriteBatchEnd(batch);
 }
@@ -116,13 +208,34 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"uniform mat4 model;"
 		"uniform mat4 view;"
 		"uniform mat4 projection;"
+		"uniform mat4 lightMVP;"
+		"varying vec4 shadowMapCoord;"
 		"void main() {"
-		"	gl_Position = projection * model * view * vec4(position, 1.0);"
+		"	gl_Position = projection * view * model * vec4(position, 1.0);"
+		"	shadowMapCoord = lightMVP * vec4(position, 1.0);"
 		"}",
 		*fragmentShaderSource = "#version 150 core\n"
+			"varying highp vec4 shadowMapCoord;"
+			"uniform sampler2D depthMap;"
 			"out vec4 outColor;"
 			"void main() {"
-			"	outColor = vec4(1.0, 0.0, 0.0, 1.0);"
+			"	vec3 projCoords = shadowMapCoord.xyz / shadowMapCoord.w;"
+			"	projCoords = projCoords * 0.5 + 0.5;"
+			"	float closestDepth = texture(depthMap, projCoords.xy).r;"
+			"	float currentDepth = projCoords.z;"
+			"	float bias = 0.005;"
+			"	float shadow = currentDepth - bias > closestDepth ? 0.0 : 1.0;"
+			"	shadow = 0.0;"
+			"	vec2 texelSize = 1.0 / textureSize(depthMap, 0);"
+			"	for (int x = -1; x <= 1; ++x) {"
+			"		for (int y = -1; y <= 1; ++y) {"
+			"			float pcfDepth = texture(depthMap, projCoords.xy + vec2(x, y) * texelSize).r;"
+			"			shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;"
+			"		}"
+			"	}"
+			"	shadow /= 9.0;"
+			"	if (projCoords.z > 1.0) shadow = 0.0;"
+			"	outColor = vec4(vec3(1.0, 0.0, 0.0) * (0.2 + 1.0 - shadow), 1.0);"
 			"}";
 	GLuint program = createProgram(vertexShaderSource, fragmentShaderSource);
 	glBindFragDataLocation(program, 0, "outColor");
@@ -173,7 +286,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 			"uniform samplerCube texture;"
 			"void main() {"
 			"	gl_FragColor = textureCube(texture, eyeDirection);"
-			// "	gl_FragDepth = 1.0;"
+			"	gl_FragDepth = 1.0;"
 			"}";
 	gameState->skyboxProgram = createProgram(skyboxVertexShaderSource, skyboxFragmentShaderSource);
 	glLinkProgram(gameState->skyboxProgram);
@@ -189,10 +302,46 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->skyboxVertexBuffer = skyboxVertexBuffer;
 	gameState->skyboxIndexBuffer = skyboxIndexBuffer;
 
+	// Shadow mapping
+	const GLchar *depthVertexShaderSource = "attribute vec3 position;"
+		"uniform mat4 lightMVP;"
+		"uniform mat4 model;"
+		"void main() {"
+		// "	gl_Position = lightMVP * model * vec4(position, 1.0f);"
+		"	gl_Position = lightMVP * vec4(position, 1.0f);"
+		"}",
+		*depthFragmentShaderSource = "void main() {"
+			"	gl_FragColor = vec4(0.2, 0.4, 0.5, 1.0);"
+			"}";
+	gameState->depthProgram = createProgram(depthVertexShaderSource, depthFragmentShaderSource);
+	glLinkProgram(gameState->depthProgram);
+
+	GLuint depthMap;
+	glGenTextures(1, &depthMap);
+	gameState->depthMap = depthMap;
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	GLuint depthMapFbo;
+	glGenFramebuffers(1, &depthMapFbo);
+	gameState->depthMapFbo = depthMapFbo;
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		printf("Error creating framebuffer.\n");
+	}
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;
 	gameState->pitch = 0;
-	// gameState->objModel = loadModelFromObj("cube.obj");
+	gameState->objModel = loadModelFromObj("cube.obj");
 	if (!gameState->objModel) {
 		printf("Failed to load model.\n");
 	}
