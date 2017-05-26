@@ -11,7 +11,7 @@
 #include "label.h"
 
 #define MOUSE_SENSITIVITY 0.006f
-#define MOVEMENT_SPEED .25f
+#define MOVEMENT_SPEED .02f
 
 #define DEGREES_TO_RADIANS(a) ((a) * M_PI / 180)
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -55,8 +55,8 @@ static void gameStateUpdate(struct State *state, float dt) {
 	gameState->pitch -= y * MOUSE_SENSITIVITY;
 	if (gameState->yaw > M_PI) gameState->yaw -= 2 * M_PI;
 	else if (gameState->yaw < -M_PI) gameState->yaw += 2 * M_PI;
-	if (gameState->pitch > M_PI / 2) gameState->pitch = M_PI / 2;
-	else if (gameState->pitch < -M_PI / 2) gameState->pitch = -M_PI / 2;
+	// Clamp the pitch
+	gameState->pitch = gameState->pitch < -M_PI / 2 ? -M_PI / 2 : gameState->pitch > M_PI / 2 ? M_PI / 2 : gameState->pitch;
 	VECTOR forward = VectorSet(-MOVEMENT_SPEED * sin(gameState->yaw) * dt, 0, -MOVEMENT_SPEED * cos(gameState->yaw) * dt, 0),
 		   up = VectorSet(0, 1, 0, 0),
 		   right = VectorCross(forward, up);
@@ -66,8 +66,8 @@ static void gameStateUpdate(struct State *state, float dt) {
 	if (keys[SDL_SCANCODE_A]) position = VectorSubtract(position, right);
 	if (keys[SDL_SCANCODE_S]) position = VectorSubtract(position, forward);
 	if (keys[SDL_SCANCODE_D]) position = VectorAdd(position, right);
-	if (keys[SDL_SCANCODE_SPACE]) position = VectorAdd(position, VectorSet(0, MOVEMENT_SPEED, 0, 0));
-	if (keys[SDL_SCANCODE_LSHIFT]) position = VectorSubtract(position, VectorSet(0, MOVEMENT_SPEED, 0, 0));
+	if (keys[SDL_SCANCODE_SPACE]) position = VectorAdd(position, VectorSet(0, MOVEMENT_SPEED * dt, 0, 0));
+	if (keys[SDL_SCANCODE_LSHIFT]) position = VectorSubtract(position, VectorSet(0, MOVEMENT_SPEED * dt, 0, 0));
 	gameState->position = position;
 }
 

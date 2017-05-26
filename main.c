@@ -43,6 +43,7 @@ int main(int argc, char *arcv[]) {
 
 	const Uint8 *state = SDL_GetKeyboardState(NULL);
 	int running = 1;
+	Uint64 frequency = SDL_GetPerformanceFrequency(), lastTime = 0;
 	SDL_Event event;
 	while (running) {
 		while (SDL_PollEvent(&event)) switch (event.type) {
@@ -62,8 +63,12 @@ int main(int argc, char *arcv[]) {
 		}
 		if (state[SDL_SCANCODE_ESCAPE]) running = 0;
 
-		manager.state->update(manager.state, 1);
-		manager.state->draw(manager.state, 1);
+		Uint64 now = SDL_GetPerformanceCounter();
+		float dt = (now - lastTime) * 1000.0f / frequency;
+		lastTime = now;
+
+		manager.state->update(manager.state, dt);
+		manager.state->draw(manager.state, dt);
 
 		GLenum error;
 		while ((error = glGetError()) != GL_NO_ERROR) {
