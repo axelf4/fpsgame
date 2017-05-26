@@ -1,17 +1,51 @@
 #include "gameState.h"
 #include <stdio.h>
+#include <math.h>
 #include <SDL.h>
 #include "pngloader.h"
 #include "glUtil.h"
 #include "ddsloader.h"
+#include <float.h>
 
 #include "image.h"
 #include "label.h"
 
 #define MOUSE_SENSITIVITY 0.006f
-#define MOVEMENT_SPEED .05f * 5
+#define MOVEMENT_SPEED .25f
 
-static const GLuint SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+#define DEGREES_TO_RADIANS(a) ((a) * M_PI / 180)
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#define NUM_FRUSTUM_CORNERS 8
+
+#define DEPTH_SIZE 1024
+#define zNear 1.0f
+#define zFar 100.0f
+
+struct Frustum {
+	float neard;
+	float fard;
+	// In radians
+	float fov;
+	float ratio;
+};
+
+static void printVector(VECTOR v) {
+	ALIGN(16) float vv[4];
+	VectorGet(vv, v);
+	printf("vector, %f, %f, %f, %f\n", vv[0], vv[1], vv[2], vv[3]);
+}
+
+static void printMatrix(MATRIX m) {
+	ALIGN(16) float mv[16];
+	MatrixGet(mv, m);
+	printf("%f\t%f\t%f\t%f\n%f\t%f\t%f\t%f\n%f\t%f\t%f\t%f\n%f\t%f\t%f\t%f\n",
+			mv[0], mv[1], mv[2], mv[3],
+			mv[4], mv[5], mv[6], mv[7],
+			mv[8], mv[9], mv[10], mv[11],
+			mv[12], mv[13], mv[14], mv[15]);
+}
 
 static void gameStateUpdate(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
@@ -37,15 +71,15 @@ static void gameStateUpdate(struct State *state, float dt) {
 	gameState->position = position;
 }
 
-MATRIX lookAt(VECTOR eye, VECTOR center, VECTOR up) {
+static MATRIX lookAt(VECTOR eye, VECTOR center, VECTOR up) {
 	ALIGN(16) float eyeV[4], centerV[4], upV[4];
 	VectorGet(eyeV, eye);
 	VectorGet(centerV, center);
 	VectorGet(upV, up);
 
-	float z0 = eyeV[0] - centerV[0];
-	float z1 = eyeV[1] - centerV[1];
-	float z2 = eyeV[2] - centerV[2];
+	float z0 = eyeV[0] - centerV[0],
+	z1 = eyeV[1] - centerV[1],
+	z2 = eyeV[2] - centerV[2];
 
 	float len = 1 / sqrt(z0 * z0 + z1 * z1 + z2 * z2);
 	z0 *= len;
@@ -84,64 +118,199 @@ MATRIX lookAt(VECTOR eye, VECTOR center, VECTOR up) {
 			-(x0 * eyeV[0] + x1 * eyeV[1] + x2 * eyeV[2]), -(y0 * eyeV[0] + y1 * eyeV[1] + y2 * eyeV[2]), -(z0 * eyeV[0] + z1 * eyeV[1] + z2 * eyeV[2]), 1);
 }
 
+/**
+ * Computes the near and far distances for every frustum slice in camera eye space.
+ * @param splitDistances Distances are output into this array
+ */
+static void getSplitDistances(float *splitDistances, float near, float far) {
+	const float lambda = 0.75f, // Split weight
+		  ratio = far / near;
+	splitDistances[0] = near;
+	for(int i = 1; i < NUM_SPLITS; ++i) {
+		const float si = i / (float) NUM_SPLITS;
+		splitDistances[i] = lambda * (near * powf(ratio, si)) + (1 - lambda) * (near + (far - near) * si);
+		// f[i - 1].fard = f[i].neard * 1.005f;
+	}
+	splitDistances[NUM_SPLITS] = far;
+}
+
+/**
+ * Computes the 8 corners of the current view frustum.
+ * @param points Gets set to the corners of the frustum.
+ */
+static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VECTOR *points) {
+	VECTOR up = VectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	VECTOR right = VectorCross(viewDir, up);
+	right = Vector4Normalize(right);
+	up = Vector4Normalize(VectorCross(right, viewDir));
+	const VECTOR fc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.fard))),
+		  nc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.neard)));
+	// Half the heights and widths of the near and far plane rectangles
+	const float nearHeight = tan(0.5f * f.fov) * f.neard,
+		  nearWidth = nearHeight * f.ratio,
+		  farHeight = tan(0.5f * f.fov) * f.fard,
+		  farWidth = farHeight * f.ratio;
+
+	points[0] = VectorSubtract(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[1] = VectorSubtract(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[2] = VectorAdd(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[3] = VectorAdd(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+
+	points[4] = VectorSubtract(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[5] = VectorSubtract(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[6] = VectorAdd(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[7] = VectorAdd(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+}
+
+/**
+ * Builds a matrix for cropping the light's projection.
+ * @param points Frustum corners
+ */
+static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightView, MATRIX *shadowCPM) {
+	ALIGN(16) float vv[4];
+	float maxZ = -INFINITY, minZ = INFINITY;
+	for (int i = 0; i < 8; ++i) {
+		const VECTOR transf = VectorTransform(points[i], lightView);
+		VectorGet(vv, transf);
+		if (vv[2] < minZ) minZ = vv[2];
+		if (vv[2] > maxZ) maxZ = vv[2];
+	}
+
+	const MATRIX shadProj = MatrixOrtho(-1.0f, 1.0f, -1.0f, 1.0f, -maxZ, -minZ), // Set the projection matrix with the new z-bounds
+		  lightViewProjection = MatrixMultiply(shadProj, lightView);
+
+	// Find extents of frustum slice in light's homogeneous coordinates
+	float minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
+	for (int i = 0; i < 8; ++i) {
+		const VECTOR v = VectorTransform(points[i], lightViewProjection);
+		VectorGet(vv, v);
+		vv[0] /= vv[3];
+		vv[1] /= vv[3];
+		if (vv[0] < minX) minX = vv[0];
+		if (vv[0] > maxX) maxX = vv[0];
+		if (vv[1] < minY) minY = vv[1];
+		if (vv[1] > maxY) maxY = vv[1];
+	}
+
+	const float scaleX = 2.0f / (maxX - minX),
+		  scaleY = 2.0f / (maxY - minY),
+		  offsetX = -0.5f * (maxX + minX) * scaleX,
+		  offsetY = -0.5f * (maxY + minY) * scaleY;
+	const MATRIX cropMatrix = MatrixSet(
+			scaleX, 0.0f, 0.0f, 0.0f,
+			0.0f, scaleY, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			offsetX, offsetY, 0.0f, 1.0f);
+	*shadowCPM = MatrixMultiply(cropMatrix, lightViewProjection);
+
+	return minZ;
+}
+
 static void gameStateDraw(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
 	struct SpriteBatch *batch = gameState->batch;
 	ALIGN(16) float vv[4], mv[16];
-
-	// Render to depth map
 	glEnable(GL_DEPTH_TEST);
-	glCullFace(GL_FRONT); // Avoid peter-panning
-	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-	glBindFramebuffer(GL_FRAMEBUFFER, gameState->depthMapFbo);
-	glClear(GL_DEPTH_BUFFER_BIT);
 
-	const MATRIX lightProjection = MatrixOrtho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 100.0f);
-	const MATRIX lightView = lookAt(VectorSet(-2.0f, 4.0f, -1.0f, 0.0f), VectorSet(0.0f, 0.0f, 0.0f, 0.0f), VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
-	const MATRIX lightMVP = MatrixMultiply(lightProjection, lightView);
-	// const MATRIX lightMVP = MatrixMultiply(lightView, lightProjection);
+	const VECTOR viewDir = VectorSet(-cos(gameState->pitch) * sin(gameState->yaw), sin(gameState->pitch), -cos(gameState->pitch) * cos(gameState->yaw), 0.0f);
+
+	const MATRIX rotationViewMatrix = MatrixRotationQuaternion(QuaternionRotationRollPitchYaw(gameState->pitch, gameState->yaw, 0)),
+		  viewInverse = MatrixMultiply(
+				  MatrixTranslationFromVector(gameState->position),
+				  rotationViewMatrix);
+	gameState->view = MatrixInverse(viewInverse);
+	const MATRIX modelView = MatrixMultiply(gameState->view, gameState->model),
+		  invModelView = MatrixInverse(modelView);
+
+	// Shadow map pass
+	glViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE);
 	glUseProgram(gameState->depthProgram);
-	glUniformMatrix4fv(glGetUniformLocation(gameState->depthProgram, "lightMVP"), 1, GL_FALSE, MatrixGet(mv, lightMVP));
+	glActiveTexture(GL_TEXTURE0);
+	// Offset the geometry slightly to prevent Z-fighting
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(1.0f, 4096.0f);
+	// glCullFace(GL_FRONT); // Avoid peter-panning
+	glDisable(GL_CULL_FACE);
 
-	// RenderScene();
-	// Draw the model
-	const GLuint attrib = glGetAttribLocation(gameState->depthProgram, "position");
-	glEnableVertexAttribArray(attrib);
+	float splitDistances[NUM_SPLITS + 1];
+	getSplitDistances(splitDistances, 1.0f, 100.0f);
+	struct Frustum f[NUM_SPLITS];
+	for (int i = 0; i < NUM_SPLITS; ++i) {
+		f[i].fov = DEGREES_TO_RADIANS(90.0f) + 0.2f;
+		f[i].ratio = (float) 800 / 600;
+		f[i].neard = splitDistances[i];
+		f[i].fard = splitDistances[i + 1];
+	}
+	const VECTOR lightDir = VectorSet(1.0f, -1.0f, 1.0f, 0.0f);
+	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 
-	glBindBuffer(GL_ARRAY_BUFFER, gameState->objModel->vertexBuffer);
-	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->objModel->indexBuffer);
-	glDrawElements(GL_TRIANGLES, gameState->objModel->indexCount, GL_UNSIGNED_INT, 0);
+	MATRIX shadowCPM[NUM_SPLITS];
+	for (int i = 0; i < NUM_SPLITS; ++i) {
+		// Bind and clear current cascade
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gameState->depthFbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gameState->shadowMaps[i], 0);
+		glClear(GL_DEPTH_BUFFER_BIT);
 
-	glBindBuffer(GL_ARRAY_BUFFER, gameState->groundModel->vertexBuffer);
-	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->groundModel->indexBuffer);
-	glDrawElements(GL_TRIANGLES, gameState->groundModel->indexCount, GL_UNSIGNED_INT, 0);
+		// Compute camera frustum slice boundary points in world space
+		VECTOR frustumPoints[8];
+		getFrustumPoints(f[i], gameState->position, viewDir, frustumPoints);
+		MATRIX shadowMatrix;
+		calculateCropMatrix(f[i], frustumPoints, lightView, shadowCPM + i);
+		glUniformMatrix4fv(glGetUniformLocation(gameState->depthProgram, "lightMVP"), 1, GL_FALSE, MatrixGet(mv, shadowCPM[i]));
 
-	glDisableVertexAttribArray(attrib);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glCullFace(GL_BACK);
+		// Draw the model
+		const GLuint attrib = glGetAttribLocation(gameState->depthProgram, "position");
+		glEnableVertexAttribArray(attrib);
+
+		glBindBuffer(GL_ARRAY_BUFFER, gameState->objModel->vertexBuffer);
+		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->objModel->indexBuffer);
+		glDrawElements(GL_TRIANGLES, gameState->objModel->indexCount, GL_UNSIGNED_INT, 0);
+
+		glBindBuffer(GL_ARRAY_BUFFER, gameState->groundModel->vertexBuffer);
+		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->groundModel->indexBuffer);
+		glDrawElements(GL_TRIANGLES, gameState->groundModel->indexCount, GL_UNSIGNED_INT, 0);
+
+		glDisableVertexAttribArray(attrib);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+	glDisable(GL_POLYGON_OFFSET_FILL);
 
 	// Main pass: render scene as normal with shadow mapping (using depth map)
+	// glCullFace(GL_BACK);
+	glEnable(GL_CULL_FACE);
 	glViewport(0, 0, 800, 600);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the screen
-
-	MATRIX rotationViewMatrix = MatrixRotationQuaternion(QuaternionRotationRollPitchYaw(gameState->pitch, gameState->yaw, 0));
-	gameState->view = MatrixInverse(MatrixMultiply(
-				MatrixTranslationFromVector(gameState->position),
-				rotationViewMatrix));
-	MATRIX modelView = MatrixMultiply(gameState->view, gameState->model);
 
 	// Draw the model
 	glUseProgram(gameState->program);
 	glUniformMatrix4fv(gameState->viewUniform, 1, GL_FALSE, MatrixGet(mv, gameState->view));
-	// glUniformMatrix4fv(gameState->viewUniform, 1, GL_FALSE, MatrixGet(mv, lightView));
-	glUniformMatrix4fv(glGetUniformLocation(gameState->program, "lightMVP"), 1, GL_FALSE, MatrixGet(mv, lightMVP));
 	glEnableVertexAttribArray(gameState->posAttrib);
 
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, gameState->depthMap);
-	glUniform1i(glGetUniformLocation(gameState->program, "depthMap"), 0);
+	const MATRIX bias = MatrixSet(
+			0.5f, 0.0f, 0.0f, 0.0f,
+			0.0f, 0.5f, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.5f, 0.0f,
+			0.5f, 0.5f, 0.5f, 1.0f);
+	float cascadeEndClipSpace[3];
+	GLfloat shadowCPMValues[NUM_SPLITS * 16];
+	GLint depthTextures[NUM_SPLITS];
+	for (int i = 0; i < NUM_SPLITS; ++i) {
+		// Compute split far distance in camera homogeneous coordinates and normalize to [0, 1]
+		MatrixGet(mv, gameState->projection);
+		const float farBound = 0.5f * (-f[i].fard * mv[10] + mv[14]) / f[i].fard + 0.5f;
+		cascadeEndClipSpace[i] = farBound;
+
+		MatrixGet(shadowCPMValues + 16 * i, MatrixMultiply(bias, shadowCPM[i]));
+
+		glActiveTexture(GL_TEXTURE0 + i);
+		glBindTexture(GL_TEXTURE_2D, gameState->shadowMaps[i]);
+		depthTextures[i] = i;
+	}
+	glUniform1fv(glGetUniformLocation(gameState->program, "cascadeEndClipSpace"), NUM_SPLITS, cascadeEndClipSpace);
+	glUniformMatrix4fv(glGetUniformLocation(gameState->program, "lightMVP"), NUM_SPLITS, GL_FALSE, shadowCPMValues);
+	glUniform1iv(glGetUniformLocation(gameState->program, "shadowMap"), NUM_SPLITS, depthTextures);
 
 	struct Model *model = gameState->objModel;
 	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
@@ -172,13 +341,10 @@ static void gameStateDraw(struct State *state, float dt) {
 	glDepthFunc(GL_LESS);
 
 	// Draw GUI
+	glDisable(GL_DEPTH_TEST);
 	spriteBatchBegin(batch);
-
-	// spriteBatchDraw(batch, gameState->depthMap, 0, 0, 800, 600);
-
-	// widgetValidate(gameState->flexLayout, 800, 600);
-	// widgetDraw(gameState->flexLayout, batch);
-
+	widgetValidate(gameState->flexLayout, 800, 600);
+	widgetDraw(gameState->flexLayout, batch);
 	spriteBatchEnd(batch);
 }
 
@@ -193,8 +359,8 @@ static void gameStateResize(struct State *state, int width, int height) {
 }
 
 static struct FlexParams params0 = { ALIGN_END, -1, 100, UNDEFINED, 20, 0, 20, 20 },
-			 params2 = {ALIGN_CENTER, 1, 100, UNDEFINED, 0, 0, 0, 50},
-			 params1 = { ALIGN_CENTER, 1, UNDEFINED, UNDEFINED, 0, 0, 0, 0 };
+						 params2 = {ALIGN_CENTER, 1, 100, UNDEFINED, 0, 0, 0, 50},
+						 params1 = { ALIGN_CENTER, 1, UNDEFINED, UNDEFINED, 0, 0, 0, 0 };
 
 void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch) {
 	struct State *state = (struct State *) gameState;
@@ -208,34 +374,42 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"uniform mat4 model;"
 		"uniform mat4 view;"
 		"uniform mat4 projection;"
-		"uniform mat4 lightMVP;"
-		"varying vec4 shadowMapCoord;"
+		"const int NUM_CASCADES = 3;"
+		"uniform mat4 lightMVP[NUM_CASCADES];"
+		"varying vec4 lightSpacePos[NUM_CASCADES];"
 		"void main() {"
 		"	gl_Position = projection * view * model * vec4(position, 1.0);"
-		"	shadowMapCoord = lightMVP * vec4(position, 1.0);"
+		"	for (int i = 0; i < NUM_CASCADES; ++i) {"
+		"		lightSpacePos[i] = lightMVP[i] * vec4(position, 1.0);"
+		"	}"
 		"}",
 		*fragmentShaderSource = "#version 150 core\n"
-			"varying highp vec4 shadowMapCoord;"
-			"uniform sampler2D depthMap;"
+			"const int NUM_CASCADES = 3;"
+			"varying vec4 lightSpacePos[NUM_CASCADES];"
+			"uniform sampler2D shadowMap[NUM_CASCADES];"
+			"uniform float cascadeEndClipSpace[NUM_CASCADES];"
+			"uniform mat4 lightMVP[NUM_CASCADES];"
+			"uniform vec4 color[4] = vec4[4](vec4(1.0, 0.0, 0.0, 1.0),"
+			"	vec4(0.0, 1.0, 0.0, 1.0),"
+			"	vec4(0.0, 0.0, 1.0, 1.0),"
+			"	vec4(1.0, 1.0, 1.0, 1.0));"
 			"out vec4 outColor;"
+			"float calcShadowFactor(int cascadeIndex, vec4 shadowCoord) {"
+			// "	shadowCoord = vec4(0.5 * shadowCoord.xyz + 0.5, shadowCoord.w);"
+			"	float z = shadowCoord.z;"
+			"	float depth = texture(shadowMap[cascadeIndex], shadowCoord.xy).x;"
+			"	return depth < z ? 0.3 : 1.0;"
+			"}"
 			"void main() {"
-			"	vec3 projCoords = shadowMapCoord.xyz / shadowMapCoord.w;"
-			"	projCoords = projCoords * 0.5 + 0.5;"
-			"	float closestDepth = texture(depthMap, projCoords.xy).r;"
-			"	float currentDepth = projCoords.z;"
-			"	float bias = 0.005;"
-			"	float shadow = currentDepth - bias > closestDepth ? 0.0 : 1.0;"
-			"	shadow = 0.0;"
-			"	vec2 texelSize = 1.0 / textureSize(depthMap, 0);"
-			"	for (int x = -1; x <= 1; ++x) {"
-			"		for (int y = -1; y <= 1; ++y) {"
-			"			float pcfDepth = texture(depthMap, projCoords.xy + vec2(x, y) * texelSize).r;"
-			"			shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;"
+			"	float shadowFactor = 0.0;"
+			"	int i;"
+			"	for (i = 0; i < NUM_CASCADES; ++i) {"
+			"		if (gl_FragCoord.z < cascadeEndClipSpace[i]) {"
+			"			shadowFactor = calcShadowFactor(i, lightSpacePos[i]);"
+			"			break;"
 			"		}"
 			"	}"
-			"	shadow /= 9.0;"
-			"	if (projCoords.z > 1.0) shadow = 0.0;"
-			"	outColor = vec4(vec3(1.0, 0.0, 0.0) * (0.2 + 1.0 - shadow), 1.0);"
+			"	outColor = vec4(shadowFactor * vec3(1.0, 1.0, 1.0), 1.0) * color[i];"
 			"}";
 	GLuint program = createProgram(vertexShaderSource, fragmentShaderSource);
 	glBindFragDataLocation(program, 0, "outColor");
@@ -252,18 +426,12 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->modelUniform = modelUniform;
 	gameState->viewUniform = viewUniform;
 	gameState->projectionUniform = projectionUniform;
-
 	ALIGN(16) float vv[4], mv[16];
 	glUseProgram(program);
-	// TODO rename to model, view, projection
-	MATRIX model = MatrixIdentity(),
-		   view,
-		   projection = MatrixPerspective(90.f, 800.0f / 600.0f, 1.0f, 3000.0f);
-	glUniformMatrix4fv(modelUniform, 1, GL_FALSE, MatrixGet(mv, model));
-	glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, MatrixGet(mv, projection));
-	gameState->model = model;
-	gameState->view = view;
-	gameState->projection = projection;
+	gameState->model = MatrixIdentity();
+	gameState->projection = MatrixPerspective(90.f, 800.0f / 600.0f, 1.0f, 100.0f);
+	glUniformMatrix4fv(modelUniform, 1, GL_FALSE, MatrixGet(mv, gameState->model));
+	glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, MatrixGet(mv, gameState->projection));
 
 	// Skybox
 	char *skyboxData = readFile("skybox.dds");
@@ -310,33 +478,35 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		// "	gl_Position = lightMVP * model * vec4(position, 1.0f);"
 		"	gl_Position = lightMVP * vec4(position, 1.0f);"
 		"}",
-		*depthFragmentShaderSource = "void main() {"
-			"	gl_FragColor = vec4(0.2, 0.4, 0.5, 1.0);"
-			"}";
+		*depthFragmentShaderSource = "void main() {}";
 	gameState->depthProgram = createProgram(depthVertexShaderSource, depthFragmentShaderSource);
 	glLinkProgram(gameState->depthProgram);
 
-	GLuint depthMap;
-	glGenTextures(1, &depthMap);
-	gameState->depthMap = depthMap;
-	glBindTexture(GL_TEXTURE_2D, depthMap);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	// Create the depth buffers
+	glGenTextures(NUM_SPLITS, gameState->shadowMaps);
+	for (int i = 0; i < NUM_SPLITS; ++i) {
+		glBindTexture(GL_TEXTURE_2D, gameState->shadowMaps[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, DEPTH_SIZE, DEPTH_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		/*glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+		  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);*/
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+	}
 
-	GLuint depthMapFbo;
-	glGenFramebuffers(1, &depthMapFbo);
-	gameState->depthMapFbo = depthMapFbo;
-	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	// Create the FBO
+	GLuint depthFbo;
+	glGenFramebuffers(1, &depthFbo);
+	gameState->depthFbo = depthFbo;
+	glBindFramebuffer(GL_FRAMEBUFFER, depthFbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gameState->shadowMaps[0], 0);
+	glDrawBuffer(GL_NONE); // Disable writes to the color buffer
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		printf("Error creating framebuffer.\n");
 	}
-	glDrawBuffer(GL_NONE);
-	glReadBuffer(GL_NONE);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0); // TODO remove
 
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;

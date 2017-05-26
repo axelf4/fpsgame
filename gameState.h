@@ -8,6 +8,9 @@
 #include "font.h"
 #include "widget.h"
 
+// The number of cascades.
+#define NUM_SPLITS 3
+
 typedef struct GameState {
 	struct State state;
 	struct SpriteBatch *batch;
@@ -25,8 +28,9 @@ typedef struct GameState {
 	struct Model *objModel;
 	struct Model *groundModel;
 
-	GLuint depthMapFbo, depthMap;
-	GLuint depthProgram;
+	GLuint depthProgram, depthFbo,
+		   // Depth textures
+		   shadowMaps[NUM_SPLITS];
 
 	struct Font *font;
 	struct Widget *flexLayout, *image0, *image1, *label;
