@@ -14,6 +14,7 @@ static float resolveAdjustedSize(float desiredSize, float size, enum MeasureMode
 			return size;
 		default:
 			assert(0);
+			return 0;
 	}
 }
 
