@@ -24,12 +24,6 @@ struct SpriteBatch *spriteBatchCreate(int size) {
 	renderer->vertices = malloc(sizeof(float) * SPRITE_SIZE * size);
 	unsigned short *indices = malloc(sizeof(unsigned short) * 6 * size);
 	for (int i = 0, j = 0, length = size * 6; i < length; i += 6, j += 4) {
-		/*indices[i] = j + 0;
-		indices[i + 1] = j + 2;
-		indices[i + 2] = j + 1;
-		indices[i + 3] = j + 0;
-		indices[i + 4] = j + 3;
-		indices[i + 5] = j + 2;*/
 		indices[i] = j + 0;
 		indices[i + 1] = j + 1;
 		indices[i + 2] = j + 2;
