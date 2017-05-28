@@ -52,7 +52,7 @@ struct Font *loadFont(char *filename, int width, int height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, font->dataWidth, font->dataHeight, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, font->dataWidth, font->dataHeight, 0, GL_ALPHA, GL_UNSIGNED_BYTE, 0);
 
 	font->library = library;
 	font->hbFont = hb_ft_font_create_referenced(font->face);
@@ -113,7 +113,7 @@ struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint) {
 		glyph->advanceY = slot->advance.y;
 
 		glBindTexture(GL_TEXTURE_2D, font->texture);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, font->dataWidth, font->dataHeight, GL_RED, GL_UNSIGNED_BYTE, font->data);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, font->dataWidth, font->dataHeight, GL_ALPHA, GL_UNSIGNED_BYTE, font->data);
 	}
 
 	return glyph;

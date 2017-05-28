@@ -73,7 +73,7 @@ struct SpriteBatch *spriteBatchCreate(int size) {
 			"uniform vec4 color;"
 			"varying vec2 vTexCoord;"
 			"void main() {"
-			"	float a = texture2D(texture, vTexCoord).r;"
+			"	float a = texture2D(texture, vTexCoord).a;"
 			"	gl_FragColor = vec4(color.rgb, color.a * a);"
 			"}";
 	renderer->textProgram = createProgram(textVertexShaderSource, textFragmentShaderSource);
