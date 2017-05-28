@@ -2,7 +2,7 @@
 #define IMAGE_H
 
 #include "widget.h"
-#include <gl/glew.h>
+#include <GL/glew.h>
 
 enum {
 	ALIGN_TOP,

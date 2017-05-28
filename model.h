@@ -1,7 +1,7 @@
 #ifndef MODEL_H
 #define MODEL_H
 
-#include <gl/glew.h>
+#include <GL/glew.h>
 
 typedef struct Model {
 	GLuint vertexBuffer, indexBuffer;

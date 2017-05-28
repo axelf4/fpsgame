@@ -5,7 +5,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <hb.h>
-#include <gl/glew.h>
+#include <GL/glew.h>
 #include "stb_rect_pack.h"
 
 typedef struct Glyph {

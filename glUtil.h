@@ -1,7 +1,7 @@
 #ifndef GL_UTIL_H
 #define GL_UTIL_H
 
-#include <gl/glew.h>
+#include <GL/glew.h>
 
 #define BUFFER_OFFSET(i) ((char *)NULL + (i))
 

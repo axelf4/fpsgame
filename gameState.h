@@ -2,7 +2,7 @@
 #define GAME_STATE_H
 
 #include "state.h"
-#include <gl/glew.h>
+#include <GL/glew.h>
 #include "spriteBatch.h"
 #include "model.h"
 #include "font.h"
