@@ -1,6 +1,7 @@
 #include "spriteBatch.h"
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "glUtil.h"
 
 /**
@@ -8,20 +9,9 @@
  */
 #define SPRITE_SIZE 16
 
-void *alignedAlloc(size_t size, size_t align) {
-	return _mm_malloc(size, align);
-}
-
-void alignedFree(void *ptr) {
-	_mm_free(ptr);
-}
-
-struct SpriteBatch *spriteBatchCreate(int size) {
-	struct SpriteBatch *renderer = alignedAlloc(sizeof(struct SpriteBatch), 16);
-	if (!renderer) {
-		return 0;
-	}
-	renderer->vertices = malloc(sizeof(float) * SPRITE_SIZE * size);
+void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
+	assert(batch && "The spritebatch cannot be null.");
+	batch->vertices = malloc(sizeof(float) * SPRITE_SIZE * size);
 	unsigned short *indices = malloc(sizeof(unsigned short) * 6 * size);
 	for (int i = 0, j = 0, length = size * 6; i < length; i += 6, j += 4) {
 		indices[i] = j + 0;
@@ -31,15 +21,15 @@ struct SpriteBatch *spriteBatchCreate(int size) {
 		indices[i + 4] = j + 2;
 		indices[i + 5] = j + 3;
 	}
-	renderer->index = 0;
-	renderer->maxVertices = size * SPRITE_SIZE;
-	renderer->drawing = 0;
+	batch->index = 0;
+	batch->maxVertices = size * SPRITE_SIZE;
+	batch->drawing = 0;
 
-	glGenBuffers(1, &renderer->vertexObject);
-	glBindBuffer(GL_ARRAY_BUFFER, renderer->vertexObject);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * SPRITE_SIZE * size, renderer->vertices, GL_STREAM_DRAW);
-	glGenBuffers(1, &renderer->indexObject);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderer->indexObject);
+	glGenBuffers(1, &batch->vertexObject);
+	glBindBuffer(GL_ARRAY_BUFFER, batch->vertexObject);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * SPRITE_SIZE * size, batch->vertices, GL_STREAM_DRAW);
+	glGenBuffers(1, &batch->indexObject);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch->indexObject);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned short) * 6 * size, indices, GL_STATIC_DRAW);
 	free(indices);
 
@@ -51,15 +41,13 @@ struct SpriteBatch *spriteBatchCreate(int size) {
 		"	vTexCoord = tex_coord;"
 		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
 		"}",
-		*fragmentShaderSource = "uniform sampler2D texture;"
-			"varying vec4 vColor;"
+		*fragmentShaderSource = "precision mediump float;"
+			"uniform sampler2D texture;"
 			"varying vec2 vTexCoord;"
 			"void main() {"
 			"	gl_FragColor = texture2D(texture, vTexCoord);"
 			"}";
-	renderer->defaultProgram = renderer->program =
-		createProgram(vertexShaderSource, fragmentShaderSource);
-	glLinkProgram(renderer->program);
+	batch->defaultProgram = batch->program = createProgram(vertexShaderSource, fragmentShaderSource);
 
 	const GLchar *textVertexShaderSource = "uniform mat4 projection;"
 		"attribute vec2 vertex;"
@@ -69,144 +57,143 @@ struct SpriteBatch *spriteBatchCreate(int size) {
 		"	vTexCoord = tex_coord;"
 		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
 		"}",
-		*textFragmentShaderSource = "uniform sampler2D texture;"
-			"uniform vec4 color;"
+		*textFragmentShaderSource = "precision mediump float;"
+			"uniform sampler2D texture;"
+			"uniform lowp vec4 color;"
 			"varying vec2 vTexCoord;"
 			"void main() {"
 			"	float a = texture2D(texture, vTexCoord).a;"
 			"	gl_FragColor = vec4(color.rgb, color.a * a);"
 			"}";
-	renderer->textProgram = createProgram(textVertexShaderSource, textFragmentShaderSource);
-	glLinkProgram(renderer->textProgram);
-
-	return renderer;
+	batch->textProgram = createProgram(textVertexShaderSource, textFragmentShaderSource);
 }
 
-void spriteBatchDestroy(struct SpriteBatch *renderer) {
-	glDeleteBuffers(1, &renderer->vertexObject);
-	glDeleteBuffers(1, &renderer->indexObject);
-	free(renderer->vertices);
-	glDeleteProgram(renderer->defaultProgram);
-	glDeleteProgram(renderer->textProgram);
-	alignedFree(renderer);
+void spriteBatchDestroy(struct SpriteBatch *batch) {
+	glDeleteBuffers(1, &batch->vertexObject);
+	glDeleteBuffers(1, &batch->indexObject);
+	free(batch->vertices);
+	glDeleteProgram(batch->defaultProgram);
+	glDeleteProgram(batch->textProgram);
 }
 
-static void spriteBatchSetupProgram(struct SpriteBatch *renderer) {
+static void spriteBatchSetupProgram(struct SpriteBatch *batch) {
 	ALIGN(16) float mv[16];
-	glUniformMatrix4fv(glGetUniformLocation(renderer->program, "projection"), 1, 0, MatrixGet(mv, renderer->projectionMatrix));
-	glUniform1i(glGetUniformLocation(renderer->program, "texture"), 0);
-	renderer->vertexAttrib = glGetAttribLocation(renderer->program, "vertex");
-	renderer->texCoordAttrib = glGetAttribLocation(renderer->program, "tex_coord");
+	glUniformMatrix4fv(glGetUniformLocation(batch->program, "projection"), 1, 0, MatrixGet(mv, batch->projectionMatrix));
+	glUniform1i(glGetUniformLocation(batch->program, "texture"), 0);
+	batch->vertexAttrib = glGetAttribLocation(batch->program, "vertex");
+	batch->texCoordAttrib = glGetAttribLocation(batch->program, "tex_coord");
 }
 
-void spriteBatchBegin(struct SpriteBatch *renderer) {
-	renderer->drawing = 1;
-	glBindBuffer(GL_ARRAY_BUFFER, renderer->vertexObject);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderer->indexObject);
+void spriteBatchBegin(struct SpriteBatch *batch) {
+	batch->drawing = 1;
+	glBindBuffer(GL_ARRAY_BUFFER, batch->vertexObject);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch->indexObject);
 
 	glActiveTexture(GL_TEXTURE0);
 
-	glUseProgram(renderer->program);
-	spriteBatchSetupProgram(renderer);
+	glUseProgram(batch->program);
+	spriteBatchSetupProgram(batch);
 
-	glEnableVertexAttribArray(renderer->vertexAttrib);
-	glEnableVertexAttribArray(renderer->texCoordAttrib);
+	glEnableVertexAttribArray(batch->vertexAttrib);
+	glEnableVertexAttribArray(batch->texCoordAttrib);
 }
 
-static void spriteBatchFlush(struct SpriteBatch *renderer) {
-	if (renderer->index == 0) return;
+static void spriteBatchFlush(struct SpriteBatch *batch) {
+	if (batch->index == 0) return;
 	GLsizei stride = sizeof(float) * 4;
-	glVertexAttribPointer(renderer->vertexAttrib, 2, GL_FLOAT, GL_FALSE, stride, 0);
-	glVertexAttribPointer(renderer->texCoordAttrib, 2, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(sizeof(float) * 2));
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * renderer->index, renderer->vertices);
-	glDrawElements(GL_TRIANGLES, renderer->index / 16 * 6, GL_UNSIGNED_SHORT, 0);
-	renderer->index = 0;
+	glVertexAttribPointer(batch->vertexAttrib, 2, GL_FLOAT, GL_FALSE, stride, 0);
+	glVertexAttribPointer(batch->texCoordAttrib, 2, GL_FLOAT, GL_FALSE, stride, BUFFER_OFFSET(sizeof(float) * 2));
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * batch->index, batch->vertices);
+	glDrawElements(GL_TRIANGLES, batch->index / 16 * 6, GL_UNSIGNED_SHORT, 0);
+	batch->index = 0;
 }
 
-void spriteBatchEnd(struct SpriteBatch *renderer) {
-	spriteBatchFlush(renderer);
-	glDisableVertexAttribArray(renderer->vertexAttrib);
-	glDisableVertexAttribArray(renderer->texCoordAttrib);
-	renderer->lastTexture = 0;
-	renderer->drawing = 0;
+void spriteBatchEnd(struct SpriteBatch *batch) {
+	spriteBatchFlush(batch);
+	glDisableVertexAttribArray(batch->vertexAttrib);
+	glDisableVertexAttribArray(batch->texCoordAttrib);
+	batch->lastTexture = 0;
+	batch->drawing = 0;
 }
 
-void spriteBatchSwitchProgram(struct SpriteBatch *renderer, GLuint program) {
-	if (renderer->drawing) {
-		spriteBatchFlush(renderer);
+void spriteBatchSwitchProgram(struct SpriteBatch *batch, GLuint program) {
+	if (batch->drawing) {
+		spriteBatchFlush(batch);
 	}
-	renderer->program = program ? program : renderer->defaultProgram;
-	if (renderer->drawing) {
-		glUseProgram(renderer->program);
-		spriteBatchSetupProgram(renderer);
+	batch->program = program ? program : batch->defaultProgram;
+	if (batch->drawing) {
+		glUseProgram(batch->program);
+		spriteBatchSetupProgram(batch);
 	}
 }
 
-static void spriteBatchSwitchTexture(struct SpriteBatch *renderer, GLuint texture) {
-	spriteBatchFlush(renderer);
+static void spriteBatchSwitchTexture(struct SpriteBatch *batch, GLuint texture) {
+	spriteBatchFlush(batch);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	renderer->lastTexture = texture;
+	batch->lastTexture = texture;
 }
 
-void spriteBatchDraw(struct SpriteBatch *renderer, GLuint texture, float x, float y, float width, float height) {
-	if (texture != renderer->lastTexture) {
-		spriteBatchSwitchTexture(renderer, texture);
-	} else if (renderer->index == renderer->maxVertices) {
-		spriteBatchFlush(renderer);
+void spriteBatchDraw(struct SpriteBatch *batch, GLuint texture, float x, float y, float width, float height) {
+	assert(batch->index <= batch->maxVertices);
+	if (texture != batch->lastTexture) {
+		spriteBatchSwitchTexture(batch, texture);
+	} else if (batch->index == batch->maxVertices) {
+		spriteBatchFlush(batch);
 	}
 
 	float x0 = x, y0 = y, x1 = x + width, y1 = y + height;
-	float *vertices = renderer->vertices;
-	vertices[renderer->index + 0] = x0;
-	vertices[renderer->index + 1] = y0;
-	vertices[renderer->index + 2] = 0;
-	vertices[renderer->index + 3] = 0;
+	float *vertices = batch->vertices;
+	vertices[batch->index + 0] = x0;
+	vertices[batch->index + 1] = y0;
+	vertices[batch->index + 2] = 0;
+	vertices[batch->index + 3] = 0;
 
-	vertices[renderer->index + 4] = x0;
-	vertices[renderer->index + 5] = y1;
-	vertices[renderer->index + 6] = 0;
-	vertices[renderer->index + 7] = 1;
+	vertices[batch->index + 4] = x0;
+	vertices[batch->index + 5] = y1;
+	vertices[batch->index + 6] = 0;
+	vertices[batch->index + 7] = 1;
 
-	vertices[renderer->index + 8] = x1;
-	vertices[renderer->index + 9] = y1;
-	vertices[renderer->index + 10] = 1;
-	vertices[renderer->index + 11] = 1;
+	vertices[batch->index + 8] = x1;
+	vertices[batch->index + 9] = y1;
+	vertices[batch->index + 10] = 1;
+	vertices[batch->index + 11] = 1;
 
-	vertices[renderer->index + 12] = x1;
-	vertices[renderer->index + 13] = y0;
-	vertices[renderer->index + 14] = 1;
-	vertices[renderer->index + 15] = 0;
-	renderer->index += 16;
+	vertices[batch->index + 12] = x1;
+	vertices[batch->index + 13] = y0;
+	vertices[batch->index + 14] = 1;
+	vertices[batch->index + 15] = 0;
+	batch->index += 16;
 }
 
-void spriteBatchDrawCustom(struct SpriteBatch *renderer, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1) {
-	if (texture != renderer->lastTexture) {
-		spriteBatchSwitchTexture(renderer, texture);
-	} else if (renderer->index == renderer->maxVertices) {
-		spriteBatchFlush(renderer);
+void spriteBatchDrawCustom(struct SpriteBatch *batch, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1) {
+	assert(batch->index <= batch->maxVertices);
+	if (texture != batch->lastTexture) {
+		spriteBatchSwitchTexture(batch, texture);
+	} else if (batch->index == batch->maxVertices) {
+		spriteBatchFlush(batch);
 	}
 
-	float *vertices = renderer->vertices;
-	vertices[renderer->index + 0] = x0;
-	vertices[renderer->index + 1] = y0;
-	vertices[renderer->index + 2] = s0;
-	vertices[renderer->index + 3] = t0;
+	float *vertices = batch->vertices;
+	vertices[batch->index + 0] = x0;
+	vertices[batch->index + 1] = y0;
+	vertices[batch->index + 2] = s0;
+	vertices[batch->index + 3] = t0;
 
-	vertices[renderer->index + 4] = x0;
-	vertices[renderer->index + 5] = y1;
-	vertices[renderer->index + 6] = s0;
-	vertices[renderer->index + 7] = t1;
+	vertices[batch->index + 4] = x0;
+	vertices[batch->index + 5] = y1;
+	vertices[batch->index + 6] = s0;
+	vertices[batch->index + 7] = t1;
 
-	vertices[renderer->index + 8] = x1;
-	vertices[renderer->index + 9] = y1;
-	vertices[renderer->index + 10] = s1;
-	vertices[renderer->index + 11] = t1;
+	vertices[batch->index + 8] = x1;
+	vertices[batch->index + 9] = y1;
+	vertices[batch->index + 10] = s1;
+	vertices[batch->index + 11] = t1;
 
-	vertices[renderer->index + 12] = x1;
-	vertices[renderer->index + 13] = y0;
-	vertices[renderer->index + 14] = s1;
-	vertices[renderer->index + 15] = t0;
-	renderer->index += 16;
+	vertices[batch->index + 12] = x1;
+	vertices[batch->index + 13] = y0;
+	vertices[batch->index + 14] = s1;
+	vertices[batch->index + 15] = t0;
+	batch->index += 16;
 }
 
 void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, Color color, float x, float y) {

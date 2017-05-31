@@ -9,13 +9,29 @@ char *readFile(const char *filename) {
 		fseek(f, 0, SEEK_END);
 		long length = ftell(f);
 		rewind(f); // fseek(f, 0, SEEK_SET);
-		if (buffer = malloc(length + 1)) {
+		if ((buffer = malloc(length + 1))) {
 			fread(buffer, length, 1, f);
 			fclose(f);
 			buffer[length] = 0;
 		}
 	}
 	return buffer;
+}
+
+void *alignedAlloc(size_t size, size_t align) {
+	// return aligned_alloc(align, size);
+	// return _mm_malloc(size, align);
+	void *mem = malloc(size + 15 + sizeof(void *));
+	if (!mem) return 0;
+	void *ptr = (void *) (((uintptr_t) mem + 15 + sizeof(void *)) & ~(uintptr_t) 0x0F);
+	((void **) ptr)[-1] = mem;
+	return ptr;
+}
+
+void alignedFree(void *ptr) {
+	// free(ptr);
+	// _mm_free(ptr);
+	if (ptr) free(((void **) ptr)[-1]);
 }
 
 GLuint compileShader(GLenum type, const GLchar *source) {
@@ -41,17 +57,18 @@ GLuint compileShader(GLenum type, const GLchar *source) {
 }
 
 GLuint createProgram(const GLchar *vertexShaderSource, const GLchar *fragmentShaderSource) {
-	GLuint program = 0, vertexShader, fragmentShader;
+	GLuint vertexShader, fragmentShader;
 	if (!(vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource))) {
 		goto deleteVertex;
 	}
 	if (!(fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource))) {
 		goto deleteFragment;
 	}
+	const GLuint program = glCreateProgram();
 	// Mark the shaders for linkage into the program
-	program = glCreateProgram();
 	glAttachShader(program, vertexShader);
 	glAttachShader(program, fragmentShader);
+	glLinkProgram(program);
 
 deleteFragment:
 	glDeleteShader(fragmentShader);

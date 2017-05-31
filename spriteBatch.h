@@ -27,19 +27,19 @@ struct SpriteBatch {
 	GLuint textProgram;
 };
 
-struct SpriteBatch *spriteBatchCreate(int size);
+void spriteBatchInitialize(struct SpriteBatch *batch, int size);
 
-void spriteBatchDestroy(struct SpriteBatch *renderer);
+void spriteBatchDestroy(struct SpriteBatch *batch);
 
-void spriteBatchBegin(struct SpriteBatch *renderer);
+void spriteBatchBegin(struct SpriteBatch *batch);
 
-void spriteBatchEnd(struct SpriteBatch *renderer);
+void spriteBatchEnd(struct SpriteBatch *batch);
 
-void spriteBatchSwitchProgram(struct SpriteBatch *renderer, GLuint program);
+void spriteBatchSwitchProgram(struct SpriteBatch *batch, GLuint program);
 
-void spriteBatchDraw(struct SpriteBatch *renderer, GLuint texture, float x, float y, float width, float height);
+void spriteBatchDraw(struct SpriteBatch *batch, GLuint texture, float x, float y, float width, float height);
 
-void spriteBatchDrawCustom(struct SpriteBatch *renderer, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1);
+void spriteBatchDrawCustom(struct SpriteBatch *batch, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1);
 
 void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, Color color, float x, float y);
 

@@ -247,7 +247,7 @@ static void gameStateDraw(struct State *state, float dt) {
 	MATRIX shadowCPM[NUM_SPLITS];
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		// Bind and clear current cascade
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gameState->depthFbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, gameState->depthFbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gameState->shadowMaps[i], 0);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -327,7 +327,7 @@ static void gameStateDraw(struct State *state, float dt) {
 	glDisableVertexAttribArray(gameState->posAttrib);
 
 	// Draw the skybox
-	glUseProgram(gameState->skyboxProgram);
+	/*glUseProgram(gameState->skyboxProgram);
 	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "invProjection"), 1, GL_FALSE, MatrixGet(mv, MatrixInverse(gameState->projection)));
 	glUniformMatrix4fv(glGetUniformLocation(gameState->skyboxProgram, "modelView"), 1, GL_FALSE, MatrixGet(mv, modelView));
 	glActiveTexture(GL_TEXTURE0);
@@ -338,7 +338,7 @@ static void gameStateDraw(struct State *state, float dt) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->skyboxIndexBuffer);
 	glDepthFunc(GL_LEQUAL);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-	glDepthFunc(GL_LESS);
+	glDepthFunc(GL_LESS);*/
 
 	// Draw GUI
 	glDisable(GL_DEPTH_TEST);
@@ -369,8 +369,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	state->resize = gameStateResize;
 	gameState->batch = batch;
 
-	const GLchar *vertexShaderSource = "#version 150 core\n"
-		"in vec3 position;"
+	const GLchar *vertexShaderSource = "attribute vec3 position;"
 		"uniform mat4 model;"
 		"uniform mat4 view;"
 		"uniform mat4 projection;"
@@ -383,37 +382,28 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"		lightSpacePos[i] = lightMVP[i] * vec4(position, 1.0);"
 		"	}"
 		"}",
-		*fragmentShaderSource = "#version 150 core\n"
+		*fragmentShaderSource = "precision mediump float;"
 			"const int NUM_CASCADES = 3;"
 			"varying vec4 lightSpacePos[NUM_CASCADES];"
 			"uniform sampler2D shadowMap[NUM_CASCADES];"
 			"uniform float cascadeEndClipSpace[NUM_CASCADES];"
-			"uniform mat4 lightMVP[NUM_CASCADES];"
-			"uniform vec4 color[4] = vec4[4](vec4(1.0, 0.0, 0.0, 1.0),"
-			"	vec4(0.0, 1.0, 0.0, 1.0),"
-			"	vec4(0.0, 0.0, 1.0, 1.0),"
-			"	vec4(1.0, 1.0, 1.0, 1.0));"
-			"out vec4 outColor;"
-			"float calcShadowFactor(int cascadeIndex, vec4 shadowCoord) {"
+			"float calcShadowFactor() {"
+			"	for (int i = 0; i < NUM_CASCADES; ++i) {"
 			// "	shadowCoord = vec4(0.5 * shadowCoord.xyz + 0.5, shadowCoord.w);"
+			"	if (gl_FragCoord.z < cascadeEndClipSpace[i]) {"
+			"	vec4 shadowCoord = lightSpacePos[i];"
 			"	float z = shadowCoord.z;"
-			"	float depth = texture(shadowMap[cascadeIndex], shadowCoord.xy).x;"
+			"	float depth = texture2D(shadowMap[i], shadowCoord.xy).x;"
 			"	return depth < z ? 0.3 : 1.0;"
+			"	}"
+			"	}"
+			"	return 1.0;"
 			"}"
 			"void main() {"
-			"	float shadowFactor = 0.0;"
-			"	int i;"
-			"	for (i = 0; i < NUM_CASCADES; ++i) {"
-			"		if (gl_FragCoord.z < cascadeEndClipSpace[i]) {"
-			"			shadowFactor = calcShadowFactor(i, lightSpacePos[i]);"
-			"			break;"
-			"		}"
-			"	}"
-			"	outColor = vec4(shadowFactor * vec3(1.0, 1.0, 1.0), 1.0) * color[i];"
+			"	float shadowFactor = calcShadowFactor();"
+			"	gl_FragColor = vec4(shadowFactor * vec3(1.0, 1.0, 1.0), 1.0);"
 			"}";
 	GLuint program = createProgram(vertexShaderSource, fragmentShaderSource);
-	glBindFragDataLocation(program, 0, "outColor");
-	glLinkProgram(program);
 	gameState->program = program;
 
 	// Specify the layout of the vertex data
@@ -434,7 +424,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, MatrixGet(mv, gameState->projection));
 
 	// Skybox
-	char *skyboxData = readFile("skybox.dds");
+	/*char *skyboxData = readFile("skybox.dds");
 	gameState->skyboxTexture = dds_load_texture_from_memory(skyboxData, 0, 0, 0);
 	free(skyboxData);
 	if (!gameState->skyboxTexture) {
@@ -450,14 +440,14 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"void main() {"
 		"	eyeDirection = vec3(invProjection * (gl_Position = vec4(vertex, 0.0, 1.0)) * modelView);"
 		"}",
-		*skyboxFragmentShaderSource = "varying vec3 eyeDirection;"
+		*skyboxFragmentShaderSource = "precision mediump float;"
+			"varying vec3 eyeDirection;"
 			"uniform samplerCube texture;"
 			"void main() {"
 			"	gl_FragColor = textureCube(texture, eyeDirection);"
-			"	gl_FragDepth = 1.0;"
+			// "	gl_FragDepth = 1.0;" // TODO add replacement
 			"}";
 	gameState->skyboxProgram = createProgram(skyboxVertexShaderSource, skyboxFragmentShaderSource);
-	glLinkProgram(gameState->skyboxProgram);
 	const float skyboxVertices[] = { -1, -1, 1, -1, 1, 1, -1, 1 };
 	const unsigned int cubeIndices[] = { 0, 1, 2, 0, 2, 3 };
 	GLuint skyboxVertexBuffer, skyboxIndexBuffer;
@@ -468,32 +458,30 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, skyboxIndexBuffer);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), cubeIndices, GL_STATIC_DRAW);
 	gameState->skyboxVertexBuffer = skyboxVertexBuffer;
-	gameState->skyboxIndexBuffer = skyboxIndexBuffer;
+	gameState->skyboxIndexBuffer = skyboxIndexBuffer;*/
 
 	// Shadow mapping
 	const GLchar *depthVertexShaderSource = "attribute vec3 position;"
 		"uniform mat4 lightMVP;"
 		"uniform mat4 model;"
 		"void main() {"
-		// "	gl_Position = lightMVP * model * vec4(position, 1.0f);"
-		"	gl_Position = lightMVP * vec4(position, 1.0f);"
+		// "	gl_Position = lightMVP * model * vec4(position, 1.0);"
+		"	gl_Position = lightMVP * vec4(position, 1.0);"
 		"}",
 		*depthFragmentShaderSource = "void main() {}";
 	gameState->depthProgram = createProgram(depthVertexShaderSource, depthFragmentShaderSource);
-	glLinkProgram(gameState->depthProgram);
 
 	// Create the depth buffers
 	glGenTextures(NUM_SPLITS, gameState->shadowMaps);
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		glBindTexture(GL_TEXTURE_2D, gameState->shadowMaps[i]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, DEPTH_SIZE, DEPTH_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, DEPTH_SIZE, DEPTH_SIZE, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		/*glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
 		  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);*/
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 	}
 
 	// Create the FBO
@@ -502,7 +490,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->depthFbo = depthFbo;
 	glBindFramebuffer(GL_FRAMEBUFFER, depthFbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gameState->shadowMaps[0], 0);
-	glDrawBuffer(GL_NONE); // Disable writes to the color buffer
+	// glDrawBuffer(GL_NONE); // Disable writes to the color buffer
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		printf("Error creating framebuffer.\n");
 	}
@@ -551,10 +539,10 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 
 void gameStateDestroy(struct GameState *gameState) {
 	glDeleteProgram(gameState->program);
-	glDeleteProgram(gameState->skyboxProgram);
+	/*glDeleteProgram(gameState->skyboxProgram);
 	glDeleteTextures(1, &gameState->skyboxTexture);
 	glDeleteBuffers(1, &gameState->skyboxVertexBuffer);
-	glDeleteBuffers(1, &gameState->skyboxIndexBuffer);
+	glDeleteBuffers(1, &gameState->skyboxIndexBuffer);*/
 
 	destroyModel(gameState->objModel);
 

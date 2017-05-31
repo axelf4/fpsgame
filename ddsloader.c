@@ -293,8 +293,8 @@ GLuint dds_load_texture_from_memory(const char *data, int *imageWidth, int *imag
 				glCompressedTexImage2D(target, i, internalformat, width, height, 0, size, pixels ? pixels : (unsigned char *) data + offset); // data + offset
 				free(pixels);
 				GLint param = 0;
-				glGetTexLevelParameteriv(target, i, GL_TEXTURE_COMPRESSED_ARB, &param);
-				if (param == 0) printf("Mipmap level %d indicated compression failed", i);
+				// glGetTexLevelParameteriv(target, i, GL_TEXTURE_COMPRESSED_ARB, &param);
+				// if (param == 0) printf("Mipmap level %d indicated compression failed", i);
 			}
 
 			offset += size;

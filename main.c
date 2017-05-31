@@ -7,16 +7,54 @@
 #include "state.h"
 #include "spriteBatch.h"
 #include "gameState.h"
+#include <emscripten.h>
+
+SDL_Window *window;
+struct StateManager manager;
+struct GameState gameState;
+struct SpriteBatch batch;
+Uint64 frequency, lastTime = 0;
+
+static void update() {
+	const Uint8 *state = SDL_GetKeyboardState(NULL);
+	SDL_Event event;
+	while (SDL_PollEvent(&event)) switch (event.type) {
+		case SDL_QUIT:
+			break;
+		case SDL_WINDOWEVENT:
+			if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+				Sint32 width = event.window.data1,
+					   height = event.window.data2;
+				printf("window resized to %d,%d\n", width, height);
+				batch.projectionMatrix = MatrixOrtho(0, width, height, 0, -1, 1);
+				glViewport(0, 0, width, height);
+				manager.state->resize(manager.state, width, height);
+			}
+			break;
+	}
+
+	Uint64 now = SDL_GetPerformanceCounter();
+	float dt = (now - lastTime) * 1000.0f / frequency;
+	lastTime = now;
+
+	manager.state->update(manager.state, dt);
+	manager.state->draw(manager.state, dt);
+
+	GLenum error;
+	while ((error = glGetError()) != GL_NO_ERROR) {
+		fprintf(stderr, "OpenGL error: %d\n", error);
+	}
+
+	SDL_GL_SwapWindow(window);
+}
 
 int main(int argc, char *arcv[]) {
-	setvbuf(stdout, 0, _IONBF, 0);
-	setvbuf(stderr, 0, _IONBF, 0);
+	printf("Starting the engine.\n");
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		printf("SDL_Init Error: %s\n", SDL_GetError());
 		return 1;
 	}
-	SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
-	SDL_Window *window;
+	// SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
 	if (!(window = SDL_CreateWindow("Hello", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE))) {
 		fprintf(stderr, "SDL_CreateWindow Error: %s\n", SDL_GetError());
 		SDL_Quit();
@@ -33,56 +71,22 @@ int main(int argc, char *arcv[]) {
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glClearColor(0.3, 0.7, 0.1, 1.0);
 
-	struct SpriteBatch *batch = spriteBatchCreate(1);
-	batch->projectionMatrix = MatrixOrtho(0, 800, 600, 0, -1, 1);
+	spriteBatchInitialize(&batch, 32);
+	batch.projectionMatrix = MatrixOrtho(0, 800, 600, 0, -1, 1);
 
-	struct StateManager manager;
-	struct GameState gameState;
-	gameStateInitialize(&gameState, batch);
+	gameStateInitialize(&gameState, &batch);
 	setState(&manager, (struct State *) &gameState);
 
-	const Uint8 *state = SDL_GetKeyboardState(NULL);
-	int running = 1;
-	Uint64 frequency = SDL_GetPerformanceFrequency(), lastTime = 0;
-	SDL_Event event;
-	while (running) {
-		while (SDL_PollEvent(&event)) switch (event.type) {
-			case SDL_QUIT:
-				running = 0;
-				break;
-			case SDL_WINDOWEVENT:
-				if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-					Sint32 width = event.window.data1,
-						height = event.window.data2;
-					printf("window resized to %d,%d\n", width, height);
-					batch->projectionMatrix = MatrixOrtho(0, width, height, 0, -1, 1);
-					glViewport(0, 0, width, height);
-					manager.state->resize(manager.state, width, height);
-				}
-				break;
-		}
-		if (state[SDL_SCANCODE_ESCAPE]) running = 0;
+	frequency = SDL_GetPerformanceFrequency();
 
-		Uint64 now = SDL_GetPerformanceCounter();
-		float dt = (now - lastTime) * 1000.0f / frequency;
-		lastTime = now;
+	emscripten_set_main_loop(update, 0, 1);
 
-		manager.state->update(manager.state, dt);
-		manager.state->draw(manager.state, dt);
+	/*SDL_HideWindow(window);
 
-		GLenum error;
-		while ((error = glGetError()) != GL_NO_ERROR) {
-			fprintf(stderr, "OpenGL error: %d\n", error);
-		}
+	  gameStateDestroy(&gameState);
+	  spriteBatchDestroy(&batch);
 
-		SDL_GL_SwapWindow(window);
-	}
-	SDL_HideWindow(window);
-
-	gameStateDestroy(&gameState);
-	spriteBatchDestroy(batch);
-
-	SDL_Quit();
+	  SDL_Quit();*/
 
 	return 0;
 }
