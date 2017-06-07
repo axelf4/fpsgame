@@ -226,9 +226,6 @@ static void gameStateDraw(struct State *state, float dt) {
 	glViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE);
 	glUseProgram(gameState->depthProgram);
 	glActiveTexture(GL_TEXTURE0);
-	// Offset the geometry slightly to prevent Z-fighting
-	glEnable(GL_POLYGON_OFFSET_FILL);
-	glPolygonOffset(1.0f, 4096.0f);
 	// glCullFace(GL_FRONT); // Avoid peter-panning
 	glDisable(GL_CULL_FACE);
 
@@ -275,7 +272,6 @@ static void gameStateDraw(struct State *state, float dt) {
 		glDisableVertexAttribArray(attrib);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
-	glDisable(GL_POLYGON_OFFSET_FILL);
 
 	// Main pass: render scene as normal with shadow mapping (using depth map)
 	// glCullFace(GL_BACK);
@@ -394,7 +390,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 			"	vec4 shadowCoord = lightSpacePos[i];"
 			"	float z = shadowCoord.z;"
 			"	float depth = texture2D(shadowMap[i], shadowCoord.xy).x;"
-			"	return depth < z ? 0.3 : 1.0;"
+			"	return depth + 0.001 < z ? 0.3 : 1.0;" // Slight offset to prevent shadow acne
 			"	}"
 			"	}"
 			"	return 1.0;"
