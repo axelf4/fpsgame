@@ -59,7 +59,7 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 		"}",
 		*textFragmentShaderSource = "precision mediump float;"
 			"uniform sampler2D texture;"
-			"uniform lowp vec4 color;"
+			"uniform vec4 color;"
 			"varying vec2 vTexCoord;"
 			"void main() {"
 			"	float a = texture2D(texture, vTexCoord).a;"
