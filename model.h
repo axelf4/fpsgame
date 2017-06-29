@@ -3,19 +3,23 @@
 
 #include <GL/glew.h>
 
+struct Material {
+	float diffuse[3];
+};
+
+typedef struct ModelPart {
+	unsigned int count, offset;
+	int materialIndex;
+} ModelPart;
+
 typedef struct Model {
 	GLuint vertexBuffer, indexBuffer;
 	size_t indexCount;
+	GLsizei stride;
+	int numParts;
+	struct ModelPart *parts;
+	struct Material *materials;
 } Model;
-
-typedef struct ObjBuilder {
-	size_t verticesSize, verticesCapacity, texcoordsSize, texcoordsCapacity, normalsSize, normalsCapacity, indicesSize, indicesCapacity;
-	unsigned int numFaces;
-	float *vertices,
-		  *texcoords,
-		  *normals;
-	struct ObjVertexIndex *indices;
-} ObjBuilder;
 
 struct Model *loadModelFromObj(const char *path);
 

@@ -41,7 +41,9 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 		"	vTexCoord = tex_coord;"
 		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
 		"}",
-		*fragmentShaderSource = "precision mediump float;"
+		*fragmentShaderSource = "#ifdef GL_ES\n"
+			"precision mediump float;\n"
+			"#endif\n"
 			"uniform sampler2D texture;"
 			"varying vec2 vTexCoord;"
 			"void main() {"
@@ -57,7 +59,9 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 		"	vTexCoord = tex_coord;"
 		"	gl_Position = projection * vec4(vertex, 0.0, 1.0);"
 		"}",
-		*textFragmentShaderSource = "precision mediump float;"
+		*textFragmentShaderSource = "#ifdef GL_ES\n"
+			"precision mediump float;\n"
+			"#endif\n"
 			"uniform sampler2D texture;"
 			"uniform vec4 color;"
 			"varying vec2 vTexCoord;"

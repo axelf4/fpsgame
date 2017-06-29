@@ -7,19 +7,23 @@
 #include "state.h"
 #include "spriteBatch.h"
 #include "gameState.h"
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#endif
 
 SDL_Window *window;
 struct StateManager manager;
 struct GameState gameState;
 struct SpriteBatch batch;
 Uint64 frequency, lastTime = 0;
+int running = 1;
 
 static void update() {
 	const Uint8 *state = SDL_GetKeyboardState(NULL);
 	SDL_Event event;
 	while (SDL_PollEvent(&event)) switch (event.type) {
 		case SDL_QUIT:
+			running = 0;
 			break;
 		case SDL_WINDOWEVENT:
 			if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -32,6 +36,7 @@ static void update() {
 			}
 			break;
 	}
+	if (state[SDL_SCANCODE_ESCAPE]) running = 0;
 
 	Uint64 now = SDL_GetPerformanceCounter();
 	float dt = (now - lastTime) * 1000.0f / frequency;
@@ -79,7 +84,13 @@ int main(int argc, char *arcv[]) {
 
 	frequency = SDL_GetPerformanceFrequency();
 
+#ifdef __EMSCRIPTEN__
 	emscripten_set_main_loop(update, 0, 1);
+#else
+	while (running) {
+		update();
+	}
+#endif
 
 	/*SDL_HideWindow(window);
 

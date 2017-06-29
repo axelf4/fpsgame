@@ -6,6 +6,7 @@
 #include "glUtil.h"
 #include "ddsloader.h"
 #include <float.h>
+#include <stdint.h>
 
 #include "image.h"
 #include "label.h"
@@ -206,6 +207,16 @@ static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightV
 	return minZ;
 }
 
+static void drawModelGeometry(struct Model *model, const GLuint attrib) {
+		glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+		for (int i = 0; i < model->numParts; ++i) {
+			struct ModelPart *part = model->parts + i;
+			glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
+		}
+}
+
 static void gameStateDraw(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
 	struct SpriteBatch *batch = gameState->batch;
@@ -259,15 +270,8 @@ static void gameStateDraw(struct State *state, float dt) {
 		const GLuint attrib = glGetAttribLocation(gameState->depthProgram, "position");
 		glEnableVertexAttribArray(attrib);
 
-		glBindBuffer(GL_ARRAY_BUFFER, gameState->objModel->vertexBuffer);
-		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->objModel->indexBuffer);
-		glDrawElements(GL_TRIANGLES, gameState->objModel->indexCount, GL_UNSIGNED_INT, 0);
-
-		glBindBuffer(GL_ARRAY_BUFFER, gameState->groundModel->vertexBuffer);
-		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gameState->groundModel->indexBuffer);
-		glDrawElements(GL_TRIANGLES, gameState->groundModel->indexCount, GL_UNSIGNED_INT, 0);
+		drawModelGeometry(gameState->objModel, attrib);
+		drawModelGeometry(gameState->groundModel, attrib);
 
 		glDisableVertexAttribArray(attrib);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -308,17 +312,8 @@ static void gameStateDraw(struct State *state, float dt) {
 	glUniformMatrix4fv(glGetUniformLocation(gameState->program, "lightMVP"), NUM_SPLITS, GL_FALSE, shadowCPMValues);
 	glUniform1iv(glGetUniformLocation(gameState->program, "shadowMap"), NUM_SPLITS, depthTextures);
 
-	struct Model *model = gameState->objModel;
-	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-	glVertexAttribPointer(gameState->posAttrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-	glDrawElements(GL_TRIANGLES, model->indexCount, GL_UNSIGNED_INT, 0);
-
-	struct Model *groundModel = gameState->groundModel;
-	glBindBuffer(GL_ARRAY_BUFFER, groundModel->vertexBuffer);
-	glVertexAttribPointer(gameState->posAttrib, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, groundModel->indexBuffer);
-	glDrawElements(GL_TRIANGLES, groundModel->indexCount, GL_UNSIGNED_INT, 0);
+	drawModelGeometry(gameState->objModel, gameState->posAttrib);
+	drawModelGeometry(gameState->groundModel, gameState->posAttrib);
 
 	glDisableVertexAttribArray(gameState->posAttrib);
 
