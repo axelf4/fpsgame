@@ -3,17 +3,16 @@ project(fpsgame)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
-# find_package(OpenGL REQUIRED)
-# find_package(SDL2 REQUIRED)
-# find_package(GLEW REQUIRED)
-# find_package(PNG REQUIRED)
-# find_package(FreeType REQUIRED)
-# find_package(HarfBuzz REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(PNG REQUIRED)
+find_package(FreeType REQUIRED)
+find_package(HarfBuzz REQUIRED)
 
 add_subdirectory(lib/vmath)
 add_subdirectory(lib/objparser)
 add_subdirectory(lib/flexLayout)
-# add_subdirectory(lib/harfbuzz)
 
 add_executable(fpsgame
 	main.c
@@ -33,22 +32,19 @@ add_executable(fpsgame
 
 include_directories(
 	${objparser_SOURCE_DIR}/include
-	lib/harfbuzz/src)
-	# ${harfbuzz_SOURCE_DIR}/src
-	# ${harfbuzz_BINARY_DIR}/src)
-# ${OPENGL_INCLUDE_DIR}
-# ${SDL2_INCLUDE_DIR}
-# ${GLEW_INCLUDE_DIRS}
-# ${FREETYPE_INCLUDE_DIRS}
-# ${PNG_INCLUDE_DIRS}
-# ${HARFBUZZ_INCLUDE_DIRS})
+	${OPENGL_INCLUDE_DIR}
+	${SDL2_INCLUDE_DIR}
+	${GLEW_INCLUDE_DIRS}
+	${FREETYPE_INCLUDE_DIRS}
+	${PNG_INCLUDE_DIRS}
+	${HARFBUZZ_INCLUDE_DIRS})
 target_link_libraries(fpsgame
 	vmath
 	objparser
-	flexLayout)
-	# harfbuzz)
-# ${FREETYPE_LIBRARIES}
-# ${GLEW_LIBRARIES}
-# ${OPENGL_LIBRARIES}
-# ${SDL2_LIBRARY}
-# ${PNG_LIBRARIES})
+	flexLayout
+	${HARFBUZZ_LIBRARIES}
+	${FREETYPE_LIBRARIES}
+	${GLEW_LIBRARIES}
+	${OPENGL_LIBRARIES}
+	${SDL2_LIBRARY}
+	${PNG_LIBRARIES})
