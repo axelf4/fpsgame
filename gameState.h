@@ -11,12 +11,14 @@
 // The number of cascades.
 #define NUM_SPLITS 3
 
+#define SAO_MAX_MIP_LEVEL 5
+
 typedef struct GameState {
 	struct State state;
 	struct SpriteBatch *batch;
 
 	GLuint program;
-	GLint posAttrib, modelUniform, viewUniform, projectionUniform;
+	GLint posAttrib, normalAttrib, modelUniform, viewUniform, projectionUniform;
 	MATRIX model, view, projection;
 
 	GLuint skyboxTexture;
@@ -28,9 +30,16 @@ typedef struct GameState {
 	struct Model *objModel;
 	struct Model *groundModel;
 
-	GLuint depthProgram, depthFbo,
-		   // Depth textures
-		   shadowMaps[NUM_SPLITS];
+	GLuint depthProgram, depthProgramPosition, depthProgramMvp,
+		   depthFbo, shadowMaps[NUM_SPLITS]; // Depth textures
+
+	GLuint depthTexture;
+	GLuint ssaoFbo, ssaoTexture, ssaoProgram;
+	GLuint quadBuffer;
+	GLuint reconstructCSZProgram, minifyProgram;
+	GLuint cszTexture;
+	GLuint cszFramebuffers[SAO_MAX_MIP_LEVEL];
+	GLuint blurProgram, blurTexture, blurFbo, saoResultFbo;
 
 	struct Font *font;
 	struct Widget *flexLayout, *image0, *image1, *label;
