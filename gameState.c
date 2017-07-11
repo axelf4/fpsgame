@@ -7,6 +7,7 @@
 #include "ddsloader.h"
 #include <float.h>
 #include <stdint.h>
+#include <GL/glew.h>
 
 #include "image.h"
 #include "label.h"
@@ -132,7 +133,6 @@ static void getSplitDistances(float *splitDistances, float near, float far) {
 	for(int i = 1; i < NUM_SPLITS; ++i) {
 		const float si = i / (float) NUM_SPLITS;
 		splitDistances[i] = lambda * (near * powf(ratio, si)) + (1 - lambda) * (near + (far - near) * si);
-		// f[i - 1].fard = f[i].neard * 1.005f;
 	}
 	splitDistances[NUM_SPLITS] = far;
 }
@@ -260,9 +260,10 @@ static void gameStateDraw(struct State *state, float dt) {
 		f[i].fov = DEGREES_TO_RADIANS(90.0f) + 0.2f;
 		f[i].ratio = (float) 800 / 600;
 		f[i].neard = splitDistances[i];
+		f[i].fard = splitDistances[i + 1] * 1.005f;
 		f[i].fard = splitDistances[i + 1];
 	}
-	const VECTOR lightDir = VectorSet(1.0f, -1.0f, 0.5f, 0.0f);
+	const VECTOR lightDir = Vector4Normalize(VectorSet(1.0f, -1.0f, 0.5f, 0.0f));
 	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 
 	MATRIX shadowCPM[NUM_SPLITS];
@@ -361,6 +362,7 @@ static void gameStateDraw(struct State *state, float dt) {
 	glDisableVertexAttribArray(gameState->depthProgramPosition);
 
 	// SSAO for realz lul
+	glDisable(GL_DEPTH_TEST);
 	glBindBuffer(GL_ARRAY_BUFFER, gameState->quadBuffer);
 
 	// Compute camera space Z texture
@@ -404,30 +406,24 @@ static void gameStateDraw(struct State *state, float dt) {
 	glBindFramebuffer(GL_FRAMEBUFFER, gameState->blurFbo);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glBindTexture(GL_TEXTURE_2D, gameState->ssaoTexture);
-	glUniform2i(glGetUniformLocation(gameState->blurProgram, "axis"), 1, 0);
+	glUniform2f(glGetUniformLocation(gameState->blurProgram, "invResolutionDirection"), 1 / 800.0f, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, gameState->saoResultFbo);
-	glClear(GL_COLOR_BUFFER_BIT);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ZERO, GL_SRC_COLOR);
 	glBindTexture(GL_TEXTURE_2D, gameState->blurTexture);
-	glUniform2i(glGetUniformLocation(gameState->blurProgram, "axis"), 0, 1);
+	glUniform2f(glGetUniformLocation(gameState->blurProgram, "invResolutionDirection"), 0, 1 / 600.0f);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(glGetAttribLocation(gameState->blurProgram, "position"));
-
-	glDisable(GL_SCISSOR_TEST);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDisable(GL_BLEND);
 
 	// Draw GUI
-	glDisable(GL_DEPTH_TEST);
-	glEnable(GL_BLEND);
-	// glBlendFunc(GL_ZERO, GL_SRC_COLOR);
 	spriteBatchBegin(batch);
-	spriteBatchDraw(batch, gameState->ssaoTexture, 0, 0, 800, 600);
 	// spriteBatchDraw(batch, gameState->depthTexture, 0, 0, 800, 600);
 	// widgetValidate(gameState->flexLayout, 800, 600);
 	// widgetDraw(gameState->flexLayout, batch);
 	spriteBatchEnd(batch);
-	glDisable(GL_BLEND);
 }
 
 static void gameStateResize(struct State *state, int width, int height) {
@@ -463,33 +459,84 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"uniform mat4 model;"
 		"uniform mat4 view;"
 		"uniform mat4 projection;"
+		"uniform vec3 lightDir;"
 		"const int NUM_CASCADES = 3;"
 		"uniform mat4 lightMVP[NUM_CASCADES];"
 		"varying vec4 lightSpacePos[NUM_CASCADES];"
 		"varying vec3 vNormal;"
 		"void main() {"
-		"	vNormal = vec3(view * model * vec4(normal, 0.0));"
-		"	vNormal = normal;"
+		"	vNormal = mat3(model) * normal;"
 		"	gl_Position = projection * view * model * vec4(position, 1.0);"
 		"	for (int i = 0; i < NUM_CASCADES; ++i) {"
 		"		lightSpacePos[i] = lightMVP[i] * vec4(position, 1.0);"
 		"	}"
 		"}",
-		*fragmentShaderSource = "precision mediump float;"
+		*fragmentShaderSource = "#extension GL_EXT_gpu_shader4 : enable\n"
+			"#ifdef GL_ES\n"
+			"precision mediump float;\n"
+			"#endif\n"
 			"varying vec3 vNormal;"
 			"uniform vec3 lightDir;"
 			"const int NUM_CASCADES = 3;"
-			"varying vec4 lightSpacePos[NUM_CASCADES];"
-			"uniform sampler2D shadowMap[NUM_CASCADES];"
+			"varying vec4 lightSpacePos[NUM_CASCADES];\n"
+			"#ifdef GL_EXT_gpu_shader4\n"
+			"uniform sampler2DShadow shadowMap[NUM_CASCADES];\n"
+			"#else\n"
+			"uniform sampler2D shadowMap[NUM_CASCADES];\n"
+			"#endif\n"
 			"uniform float cascadeEndClipSpace[NUM_CASCADES];"
+			"vec2 depthGradient(vec2 uv, float z) {" // Receiver plane depth bias
+			"	vec3 duvdist_dx = dFdx(vec3(uv, z)), duvdist_dy = dFdy(vec3(uv, z));"
+			"	vec2 biasUV;" // dz_duv
+			"	biasUV.x = duvdist_dy.y * duvdist_dx.z - duvdist_dx.y * duvdist_dy.z;"
+			"	biasUV.y = duvdist_dx.x * duvdist_dy.z - duvdist_dy.x * duvdist_dx.z;"
+			"	biasUV /= (duvdist_dx.x * duvdist_dy.y - duvdist_dx.y * duvdist_dy.x);"
+			"	return biasUV;"
+			"}"
 			"float calcShadowFactor() {"
+			"	vec2 poisson[25];"
+			"	poisson[0] = vec2(-0.978698, -0.0884121);"
+			"	poisson[1] = vec2(-0.841121, 0.521165);"
+			"	poisson[2] = vec2(-0.71746, -0.50322);"
+			"	poisson[3] = vec2(-0.702933, 0.903134);"
+			"	poisson[4] = vec2(-0.663198, 0.15482);"
+			"	poisson[5] = vec2(-0.495102, -0.232887);"
+			"	poisson[6] = vec2(-0.364238, -0.961791);"
+			"	poisson[7] = vec2(-0.345866, -0.564379);"
+			"	poisson[8] = vec2(-0.325663, 0.64037);"
+			"	poisson[9] = vec2(-0.182714, 0.321329);"
+			"	poisson[10] = vec2(-0.142613, -0.0227363);"
+			"	poisson[11] = vec2(-0.0564287, -0.36729);"
+			"	poisson[12] = vec2(-0.0185858, 0.918882);"
+			"	poisson[13] = vec2(0.0381787, -0.728996);"
+			"	poisson[14] = vec2(0.16599, 0.093112);"
+			"	poisson[15] = vec2(0.253639, 0.719535);"
+			"	poisson[16] = vec2(0.369549, -0.655019);"
+			"	poisson[17] = vec2(0.423627, 0.429975);"
+			"	poisson[18] = vec2(0.530747, -0.364971);"
+			"	poisson[19] = vec2(0.566027, -0.940489);"
+			"	poisson[20] = vec2(0.639332, 0.0284127);"
+			"	poisson[21] = vec2(0.652089, 0.669668);"
+			"	poisson[22] = vec2(0.773797, 0.345012);"
+			"	poisson[23] = vec2(0.968871, 0.840449);"
+			"	poisson[24] = vec2(0.991882, -0.657338);"
 			"	for (int i = 0; i < NUM_CASCADES; ++i) {"
-			// "	shadowCoord = vec4(0.5 * shadowCoord.xyz + 0.5, shadowCoord.w);"
 			"	if (gl_FragCoord.z < cascadeEndClipSpace[i]) {"
-			"	vec4 shadowCoord = lightSpacePos[i];"
-			"	float z = shadowCoord.z;"
-			"	float depth = texture2D(shadowMap[i], shadowCoord.xy).x;"
-			"	return depth + 0.001 < z ? 0.3 : 1.0;" // Slight offset to prevent shadow acne
+			"		vec4 shadowCoord = lightSpacePos[i];\n" // shadowPos
+			"		shadowCoord /= shadowCoord.w;"
+			"		vec2 dz_duv = depthGradient(shadowCoord.xy, shadowCoord.z);\n"
+			"		shadowCoord.z -= min(2.0 * dot(vec2(1.0) / 1024.0, abs(dz_duv)), 0.01);\n"
+			"#ifdef GL_EXT_gpu_shader4\n"
+			"		float sum = 0.0;"
+			"		for (int j = 0; j < 25; ++j) {"
+			"				vec2 offset = poisson[j] / 1024.0;"
+			"				float shadowDepth = shadowCoord.z + dot(dz_duv, offset);"
+			"				sum += shadow2D(shadowMap[i], vec3(shadowCoord.xy + offset, shadowDepth)).x;"
+			"		}"
+			"		return sum / 25.0;\n"
+			"#else\n"
+			"		return texture2D(shadowMap[i], shadowCoord.xy).x + 0.001 < z ? 0.3 : 1.0;\n" // Slight offset to prevent shadow acne
+			"#endif\n"
 			"	}"
 			"	}"
 			"	return 1.0;"
@@ -568,6 +615,14 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->depthProgramMvp = glGetUniformLocation(gameState->depthProgram, "mvp");
 
 	// Create the depth buffers
+	glGenTextures(1, &gameState->depthTexture);
+	glBindTexture(GL_TEXTURE_2D, gameState->depthTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
 	glGenTextures(NUM_SPLITS, gameState->shadowMaps);
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		glBindTexture(GL_TEXTURE_2D, gameState->shadowMaps[i]);
@@ -576,15 +631,16 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		/*glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-		  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);*/
+#ifdef GL_EXT_gpu_shader4
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+#endif
 	}
-
 	// Create the FBO
 	glGenFramebuffers(1, &gameState->depthFbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, gameState->depthFbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gameState->shadowMaps[0], 0);
-	// glDrawBuffer(GL_NONE); // Disable writes to the color buffer
+	glDrawBuffer(GL_NONE); // Disable writes to the color buffer
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		printf("Error creating framebuffer.\n");
 	}
@@ -593,102 +649,13 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	// Clipping plane constants for use by reconstructZ
 	const float clipInfo[] = {zNear * zFar, zNear - zFar, zFar};
 
-	glGenTextures(1, &gameState->depthTexture);
-	glBindTexture(GL_TEXTURE_2D, gameState->depthTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glGenTextures(1, &gameState->cszTexture);
-	glBindTexture(GL_TEXTURE_2D, gameState->cszTexture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); // GL_NEAREST_MIPMAP_NEAREST
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	// glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, SAO_MAX_MIP_LEVEL);
-	glGenFramebuffers(SAO_MAX_MIP_LEVEL, gameState->cszFramebuffers);
-	/*for (int i = 0; i <= SAO_MAX_MIP_LEVEL && i == 0; ++i) {
-		glTexImage2D(GL_TEXTURE_2D, i, GL_R32F, 800, 600, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-		glBindFramebuffer(GL_FRAMEBUFFER, gameState->cszFramebuffers[i]);
-		// glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, gameState->cszTexture, i);
-	}*/
-	// glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, 800, 600, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 800, 600, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glBindFramebuffer(GL_FRAMEBUFFER, gameState->cszFramebuffers[0]);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gameState->cszTexture, 0);
-
-	const char *reconstructVertexShaderSource = "attribute vec2 position;"
-		"varying vec2 vTexCoord;"
-		"void main() {"
-		"	gl_Position = vec4(position, 0.0, 1.0);"
-		"	vTexCoord = 0.5 * position + 0.5;"
-		"}",
-		*reconstructFragmentShaderSource = "varying vec2 vTexCoord;"
-			"uniform sampler2D depthBuffer;"
-			/*
-			 * Clipping plane constants for use by reconstructZ
-			 * clipInfo = (z_f == -inf()) ? Vector3(z_n, -1.0f, 1.0f) : Vector3(z_n * z_f,  z_n - z_f,  z_f);
-			 */
-			"uniform vec3 clipInfo;"
-			"float reconstructCSZ(float d) {"
-			"	return clipInfo[0] / (clipInfo[1] * d + clipInfo[2]);"
-			"}"
-			"void main() {"
-			// "	gl_FragColor.r = reconstructCSZ(texture2D(depthBuffer, vTexCoord).r);"
-			"	gl_FragColor = vec4(vec3((2.0 * 1.0) / (100.0 + 1.0 - texture2D(depthBuffer, vTexCoord).r * (100.0 - 1.0))), 1.0);"
-			// "	gl_FragColor = vec4(vTexCoord, 0.0, 1.0);"
-			"}";
-	gameState->reconstructCSZProgram = createProgram(reconstructVertexShaderSource, reconstructFragmentShaderSource);
-	glUseProgram(gameState->reconstructCSZProgram);
-	glUniform3fv(glGetUniformLocation(gameState->reconstructCSZProgram, "clipInfo"), 1, clipInfo);
-
-	/*const char *minifyVertexShaderSource = "attribute vec2 position;"
-		"void main() {"
-		"	gl_Position = vec4(position, 0.0, 1.0);"
-		"}",
-		*minifyFragmentShaderSource = "#extension GL_EXT_gpu_shader4 : require\n"
-			"uniform sampler2D texture;"
-			"uniform int previousMipNumber;"
-			"void main() {"
-			"	ivec2 ssP = ivec2(gl_FragCoord.xy);"
-			"	gl_FragColor = texelFetch2D(texture, clamp(ssP * 2 + ivec2(ssP.y & 1, ssP.x & 1), ivec2(0), textureSize2D(texture, previousMipNumber) - 1), previousMipNumber);"
-			"}";
-	gameState->minifyProgram = createProgram(minifyVertexShaderSource, minifyFragmentShaderSource);
-
-	float ssaoKernelSource[3 * 64];
-	for (int i = 0; i < 64; ++i) {
-		VECTOR sample = VectorSet(
-				2.0f * randomFloat() - 1.0f,
-				2.0f * randomFloat() - 1.0f,
-				randomFloat(),
-				0);
-		// sample = Vector4Normalize(sample);
-		float scale = i / 64.0f;
-		scale = 0.1f + 0.9f * scale * scale;
-		sample = VectorMultiply(VectorReplicate(scale), sample);
-		VectorGet(vv, sample);
-		ssaoKernelSource[3 * i] = vv[0];
-		ssaoKernelSource[3 * i + 1] = vv[1];
-		ssaoKernelSource[3 * i + 2] = vv[2];
-	}
-	float ssaoNoise[3 * 16];
-	for (int i = 0; i < 16; ++i) {
-		ssaoNoise[3 * i] = 2 * randomFloat() - 1;
-		ssaoNoise[3 * i + 1] = 2 * randomFloat() - 1;
-		ssaoNoise[3 * i + 2] = 0.0f;
-	}
-	glGenTextures(1, &gameState->ssaoNoiseTexture);
-	glBindTexture(GL_TEXTURE_2D, gameState->ssaoNoiseTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, 4, 4, 0, GL_RGB, GL_FLOAT, ssaoNoise);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);*/
-
 	glGenTextures(1, &gameState->ssaoTexture);
 	glBindTexture(GL_TEXTURE_2D, gameState->ssaoTexture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 800, 600, 0, GL_RGB, GL_FLOAT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glGenFramebuffers(1, &gameState->ssaoFbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, gameState->ssaoFbo);
@@ -699,7 +666,6 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		"	gl_Position = vec4(position, 0.0, 1.0);"
 		"}",
 		*ssaoFragmentShaderSource = "#extension GL_EXT_gpu_shader4 : require\n"
-			// "#extension GL_ARB_gpu_shader5 : enable\n"
 			// "#extension GL_OES_standard_derivatives : enable\n"
 			"#define NUM_SAMPLES (256)\n" // 11
 			"#define FAR_PLANE_Z (-100.0)\n"
@@ -713,9 +679,6 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 			"uniform float intensityDivR6;"
 			"uniform vec3 clipInfo;"
 			"uniform vec4 projInfo;"
-			// Tile noise texture over screen based on screen dimensions divided by noise size
-			// "uniform vec2 noiseScale;"
-			// "uniform vec3 sampleKernel[64];"
 			/*
 			 * Reconstruct camera-space P.xyz from screen-space S = (x, y) in
 			 * pixels and camera-space z < 0.  Assumes that the upper-left pixel center
@@ -752,20 +715,12 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 			"}"
 			/* Read the camera-space position of the point at screen-space pixel ssP */
 			"vec3 getPosition(ivec2 ssP) {"
-			"	return reconstructCSPosition(vec2(ssP) + 0.5, reconstructCSZ(texelFetch2D(csZBuffer, ssP, 0).r));"
+			"	return reconstructCSPosition(vec2(ssP), reconstructCSZ(texelFetch2D(csZBuffer, ssP, 0).r));"
 			"}"
 			/* Read the camera-space position of the point at screen-space pixel ssC + unitOffset * ssR. Assumes length(unitOffset) == 1 */
 			"vec3 getOffsetPosition(ivec2 ssC, vec2 unitOffset, float ssR) {\n"
-			// "#ifdef GL_EXT_gpu_shader5\n"
-			// "	int mipLevel = clamp(findMSB(int(ssR)) - LOG_MAX_OFFSET, 0, MAX_MIP_LEVEL);\n"
-			// "#else\n"
-			// "	int mipLevel = clamp(int(floor(log2(ssR))) - LOG_MAX_OFFSET, 0, MAX_MIP_LEVEL);\n"
-			// "#endif\n"
-			// "	mipLevel = 0;" // don't use mipmaps
 			"	ivec2 ssP = ivec2(ssR * unitOffset) + ssC;"
 			"	return getPosition(ssP);"
-			// "	ivec2 mipP = clamp(ssP >> mipLevel, ivec2(0), textureSize2D(csZBuffer, mipLevel) - ivec2(1));"
-			// "	return reconstructCSPosition(vec2(ssP) + 0.5, texelFetch2D(csZBuffer, mipP, mipLevel).r);"
 			"}"
 			"float radius2 = radius * radius;"
 			"float sampleAO(in ivec2 ssC, in vec3 C, in vec3 n_C, in float ssDiskRadius, in int tapIndex, in float randomPatternRotationAngle) {"
@@ -798,16 +753,8 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 			"}";
 	gameState->ssaoProgram = createProgram(ssaoVertexShaderSource, ssaoFragmentShaderSource);
 	glUseProgram(gameState->ssaoProgram);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "far"), zFar);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "near"), zNear);
 	const float radius = 2.0f;
 	glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "radius"), radius);
-	// glUniform2f(glGetUniformLocation(gameState->ssaoProgram, "noiseScale"), 800 / 4, 600 / 4);
-	// glUniform3fv(glGetUniformLocation(gameState->ssaoProgram, "sampleKernel"), 64, ssaoKernelSource);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "normalTexture"), 0);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "noiseTexture"), 2);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "aspectRatio"), 800 / 600);
-	// glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "tanHalfFov"), tanf(DEGREES_TO_RADIANS(90.f / 2.0f)));
 	glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "bias"), 0.012f); // 0.012f
 	const float intensity = 1;
 	glUniform1f(glGetUniformLocation(gameState->ssaoProgram, "intensityDivR6"), intensity / pow(radius, 6.0f));
@@ -819,53 +766,59 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	glUniform4f(glGetUniformLocation(gameState->ssaoProgram, "projInfo"), 2.0f / (800.0f * mv[0]), 2.0f / (600.0f * mv[5]), -1.0f / mv[0], -1.0f / mv[5]);
 
 	const char *blurVertexShaderSource = "attribute vec2 position;"
+		"varying vec2 texCoord;"
 		"void main() {"
 		"	gl_Position = vec4(position, 0.0, 1.0);"
+		"	texCoord = 0.5 * vec2(position) + 0.5;"
 		"}",
-		*blurFragmentShaderSource = "#define EDGE_SHARPNESS (1.0)\n" // 1.0
-		"#define SCALE (2)\n"
-		"#define R (4)\n"
+		*blurFragmentShaderSource = "varying vec2 texCoord;"
 		"uniform sampler2D source;"
-		"uniform ivec2 axis;"
+		"uniform vec2 invResolutionDirection;" // Either set x to 1/width or y to 1/height
+		"uniform float sharpness;"
+		"const float KERNEL_RADIUS = 3.0;"
 		/* Returns a number on (0, 1) */
 		"float unpackKey(vec2 p) {"
 		"	return p.x * (256.0 / 257.0) + p.y * (1.0 / 257.0);"
 		"}"
+		"float blurFunction(vec2 uv, float r, float center_c, float center_d, inout float w_total) {"
+		"	vec4 temp = texture2D(source, uv);"
+		"	float c = temp.r;"
+		"	float d = unpackKey(temp.gb);"
+		"	const float blurSigma = float(KERNEL_RADIUS) * 0.5;"
+		"	const float blurFalloff = 1.0 / (2.0 * blurSigma * blurSigma);"
+		"	float ddiff = (d - center_d) * sharpness;"
+		"	float w = exp2(-r * r * blurFalloff - ddiff * ddiff);"
+		"	w_total += w;"
+		"	return c * w;"
+		"}"
 		"void main() {"
-		"	float gaussian[R + 1];"
-		"	gaussian[0] = 0.153170; gaussian[1] = 0.144893; gaussian[2] = 0.122649; gaussian[3] = 0.092902; gaussian[4] = 0.062970;"
-		"	ivec2 ssC = ivec2(gl_FragCoord.xy);"
-		"	vec4 temp = texelFetch2D(source, ssC, 0);"
-		"	float key = unpackKey(gl_FragColor.gb = temp.gb);"
-		"	float sum = temp.r;"
-		/*"	if (key == 1.0) {"
-		"		gl_FragColor.r = sum;"
-		"		return;"
-		"	}"*/
-		// Base weight for depth falloff. Increase this for better edge discrimination, decrease for more blurriness
-		"	float totalWeight = gaussian[0];"
-		"	sum *= totalWeight;"
-		"	for (int r = -R; r <= R; ++r) {"
-		"		if (r != 0) {"
-		"			temp = texelFetch2D(source, ssC + axis * (r * SCALE), 0);"
-		"			float tapKey = unpackKey(temp.gb);"
-		"			float value = temp.r;"
-		"			float weight = 0.3 * gaussian[abs(r)];"
-		"			weight *= max(0.0, 1.0 - (EDGE_SHARPNESS * 2000.0) * abs(tapKey - key));"
-		"			sum += value * weight;"
-		"			totalWeight += weight;"
-		"		}"
+		"	vec4 temp = texture2D(source, texCoord);"
+		"	float center_c = temp.r;"
+		"	float center_d = unpackKey(gl_FragColor.gb = temp.gb);"
+
+		"	float c_total = center_c;"
+		"	float w_total = 1.0;"
+		"	for (float r = 1; r <= KERNEL_RADIUS; ++r) {"
+		"		vec2 uv = texCoord + invResolutionDirection * r;"
+		"		c_total += blurFunction(uv, r, center_c, center_d, w_total);"
 		"	}"
-		"	const float epsilon = 0.0001;"
-		"	gl_FragColor.r = sum / (totalWeight + epsilon);"
+		"	for (float r = 1; r <= KERNEL_RADIUS; ++r) {"
+		"		vec2 uv = texCoord - invResolutionDirection * r;"
+		"		c_total += blurFunction(uv, r, center_c, center_d, w_total);"
+		"	}"
+		"	gl_FragColor.r = c_total / w_total;"
 		"}";
 	gameState->blurProgram = createProgram(blurVertexShaderSource, blurFragmentShaderSource);
+	glUseProgram(gameState->blurProgram);
+	glUniform1f(glGetUniformLocation(gameState->blurProgram, "sharpness"), 40.0f);
 
 	glGenTextures(1, &gameState->blurTexture);
 	glBindTexture(GL_TEXTURE_2D, gameState->blurTexture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 800, 600, 0, GL_RGB, GL_FLOAT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glGenFramebuffers(1, &gameState->blurFbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, gameState->blurFbo);
@@ -891,7 +844,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;
 	gameState->pitch = 0;
-	gameState->objModel = loadModelFromObj("bunny.obj");
+	gameState->objModel = loadModelFromObj("cube.obj");
 	if (!gameState->objModel) {
 		printf("Failed to load model.\n");
 	}
