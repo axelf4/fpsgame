@@ -3,8 +3,13 @@
 
 #include <stddef.h>
 #include <GL/glew.h>
+#include <vmath.h>
 
 #define BUFFER_OFFSET(i) ((char *)NULL + (i))
+
+enum {
+	DONT_DELETE_SHADER = 0x1
+};
 
 /**
  * Returned pointer has to be freed with free.
@@ -14,9 +19,26 @@ char *readFile(const char *filename);
 void *alignedAlloc(size_t size, size_t align);
 void alignedFree(void *ptr);
 
-/*
- * Creates a shader program and attaches the shaders but DOES NOT link the program.
+float lerp(float a, float b, float f);
+
+/**
+ * Creates a shader object from the specified source strings.
  */
-GLuint createProgram(const GLchar *vertexShaderSource, const GLchar *fragmentShaderSource);
+GLuint createShader(GLenum type, int count, ...);
+
+/**
+ * Creates and links a program.
+ * Takes in pairs of shader objects and unsigned shader flags.
+ */
+GLuint createProgram(int count, ...);
+
+/**
+ * Creates and links a shader program with from the specified shader sources.
+ */
+GLuint createProgramVertFrag(const GLchar *vertexShaderSource, const GLchar *fragmentShaderSource);
+
+void printVector(VECTOR v);
+
+void printMatrix(MATRIX m);
 
 #endif

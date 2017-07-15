@@ -28,7 +28,8 @@ add_executable(fpsgame
 	image.h image.c
 	ddsloader.h ddsloader.c
 	state.h state.c
-	gameState.h gameState.c)
+	gameState.h gameState.c
+	renderer.h renderer.c)
 
 include_directories(
 	${objparser_SOURCE_DIR}/include

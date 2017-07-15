@@ -1,5 +1,5 @@
-#ifndef RENDERER_H
-#define RENDERER_H
+#ifndef SPRITE_BATCH_H
+#define SPRITE_BATCH_H
 
 #include <GL/glew.h>
 #include <vmath.h>

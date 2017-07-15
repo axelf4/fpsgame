@@ -49,7 +49,7 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 			"void main() {"
 			"	gl_FragColor = texture2D(texture, vTexCoord);"
 			"}";
-	batch->defaultProgram = batch->program = createProgram(vertexShaderSource, fragmentShaderSource);
+	batch->defaultProgram = batch->program = createProgramVertFrag(vertexShaderSource, fragmentShaderSource);
 
 	const GLchar *textVertexShaderSource = "uniform mat4 projection;"
 		"attribute vec2 vertex;"
@@ -68,8 +68,9 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 			"void main() {"
 			"	float a = texture2D(texture, vTexCoord).a;"
 			"	gl_FragColor = vec4(color.rgb, color.a * a);"
+			"	gl_FragColor = texture2D(texture, vTexCoord);"
 			"}";
-	batch->textProgram = createProgram(textVertexShaderSource, textFragmentShaderSource);
+	batch->textProgram = createProgramVertFrag(textVertexShaderSource, textFragmentShaderSource);
 }
 
 void spriteBatchDestroy(struct SpriteBatch *batch) {
@@ -90,14 +91,14 @@ static void spriteBatchSetupProgram(struct SpriteBatch *batch) {
 
 void spriteBatchBegin(struct SpriteBatch *batch) {
 	batch->drawing = 1;
-	glBindBuffer(GL_ARRAY_BUFFER, batch->vertexObject);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch->indexObject);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	glActiveTexture(GL_TEXTURE0);
-
 	glUseProgram(batch->program);
 	spriteBatchSetupProgram(batch);
-
+	glBindBuffer(GL_ARRAY_BUFFER, batch->vertexObject);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch->indexObject);
 	glEnableVertexAttribArray(batch->vertexAttrib);
 	glEnableVertexAttribArray(batch->texCoordAttrib);
 }

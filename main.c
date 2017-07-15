@@ -61,7 +61,9 @@ int main(int argc, char *arcv[]) {
 		printf("SDL_Init Error: %s\n", SDL_GetError());
 		return 1;
 	}
-	// SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
+	SDL_SetRelativeMouseMode(SDL_TRUE); // Capture mouse and use relative coordinates
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 8);
 	if (!(window = SDL_CreateWindow("Hello", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE))) {
 		fprintf(stderr, "SDL_CreateWindow Error: %s\n", SDL_GetError());
 		SDL_Quit();
@@ -73,9 +75,7 @@ int main(int argc, char *arcv[]) {
 		printf("glewInit Error: %s\n", glewGetErrorString(err));
 	}
 
-	// glEnable(GL_CULL_FACE);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_CULL_FACE);
 	glClearColor(0.3, 0.7, 0.1, 1.0);
 
 	spriteBatchInitialize(&batch, 32);

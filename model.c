@@ -163,7 +163,7 @@ struct Model *loadModelFromObj(const char *path) {
 
 	unsigned int vertexCount = 0, indexCount = 0;
 	// Assume that each face is a triangle
-	GLfloat *vertices = vertices = malloc(sizeof(float) * obj.numFaces * 3 * (3 + 2 * obj.texcoordsSize + 3 * obj.normalsSize));
+	GLfloat *vertices = malloc(sizeof(float) * obj.numFaces * 3 * (3 + 2 * obj.texcoordsSize + 3 * obj.normalsSize));
 	unsigned int *indices = malloc(sizeof(unsigned int) * obj.numFaces * 3);
 	for (unsigned face = 0, k = 0; face < obj.numFaces; ++face) {
 		for (unsigned i = 0; i < 3; ++i) {
