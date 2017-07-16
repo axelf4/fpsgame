@@ -3,12 +3,14 @@ project(fpsgame)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
-find_package(OpenGL REQUIRED)
-find_package(SDL2 REQUIRED)
-find_package(GLEW REQUIRED)
-find_package(PNG REQUIRED)
-find_package(FreeType REQUIRED)
-find_package(HarfBuzz REQUIRED)
+if (NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Emscripten")
+	find_package(OpenGL REQUIRED)
+	find_package(SDL2 REQUIRED)
+	find_package(GLEW REQUIRED)
+	find_package(PNG REQUIRED)
+	find_package(Freetype REQUIRED)
+	find_package(HarfBuzz REQUIRED)
+endif()
 
 add_subdirectory(lib/vmath)
 add_subdirectory(lib/objparser)
@@ -33,19 +35,26 @@ add_executable(fpsgame
 
 include_directories(
 	${objparser_SOURCE_DIR}/include
-	${OPENGL_INCLUDE_DIR}
-	${SDL2_INCLUDE_DIR}
-	${GLEW_INCLUDE_DIRS}
-	${FREETYPE_INCLUDE_DIRS}
-	${PNG_INCLUDE_DIRS}
-	${HARFBUZZ_INCLUDE_DIRS})
+	lib/harfbuzz/src)
 target_link_libraries(fpsgame
 	vmath
 	objparser
-	flexLayout
-	${HARFBUZZ_LIBRARIES}
-	${FREETYPE_LIBRARIES}
-	${GLEW_LIBRARIES}
-	${OPENGL_LIBRARIES}
-	${SDL2_LIBRARY}
-	${PNG_LIBRARIES})
+	flexLayout)
+
+if (NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Emscripten")
+	include_directories(
+		${OPENGL_INCLUDE_DIR}
+		${SDL2_INCLUDE_DIR}
+		${GLEW_INCLUDE_DIRS}
+		${FREETYPE_INCLUDE_DIRS}
+		${PNG_INCLUDE_DIRS}
+		${HARFBUZZ_INCLUDE_DIRS})
+	target_link_libraries(fpsgame
+		${HARFBUZZ_LIBRARIES}
+		${FREETYPE_LIBRARIES}
+		${GLEW_LIBRARIES}
+		${OPENGL_LIBRARIES}
+		${SDL2_LIBRARY}
+		${PNG_LIBRARIES}
+		m)
+endif()
