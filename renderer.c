@@ -195,10 +195,10 @@ int rendererInit(struct Renderer *renderer) {
 		"		lightSpacePos[i] = lightMVP[i] * vec4(position, 1.0);"
 		"	}"
 		"}",
-		*fragmentShaderSource = "#ifdef GL_ES\n"
-			"precision mediump float;\n"
+		*fragmentShaderSource = "#extension GL_EXT_gpu_shader4 : enable\n"
+			"#ifdef GL_ES\n"
+			"precision highp float;\n"
 			"#endif\n"
-			"#extension GL_EXT_gpu_shader4 : enable\n"
 			"varying vec3 vNormal;"
 			"uniform vec3 lightDir;"
 			"const int NUM_CASCADES = 3;"
@@ -258,7 +258,7 @@ int rendererInit(struct Renderer *renderer) {
 			"		}"
 			"		return sum / 25.0;\n"
 			"#else\n"
-			"		return texture2D(shadowMap[i], shadowCoord.xy).x + 0.001 < z ? 0.3 : 1.0;\n" // Slight offset to prevent shadow acne
+			"		return texture2D(shadowMap[i], shadowCoord.xy).x + 0.001 < shadowCoord.z ? 0.3 : 1.0;\n" // Slight offset to prevent shadow acne
 			"#endif\n"
 			"	}"
 			"	}"
