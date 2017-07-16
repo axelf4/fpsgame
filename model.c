@@ -28,7 +28,7 @@ static void addVertexCB(void *prv, float x, float y, float z, float w) {
 	struct ObjBuilder *obj = prv;
 	if (obj->verticesSize + 3 > obj->verticesCapacity) {
 		float *tmp = realloc(obj->vertices, sizeof(float) * (obj->verticesCapacity *= 2));
-		// if (!tmp) goto error;
+		assert(tmp && "Failed to reallocate array.");
 		obj->vertices = tmp;
 	}
 	obj->vertices[obj->verticesSize++] = x;
@@ -40,7 +40,7 @@ static void addTexcoordCB(void *prv, float x, float y, float z) {
 	struct ObjBuilder *obj = prv;
 	if (obj->texcoordsSize + 3 > obj->texcoordsCapacity) {
 		float *tmp = realloc(obj->texcoords, sizeof(float) * (obj->texcoordsCapacity *= 2));
-		// if (!tmp) goto error;
+		assert(tmp && "Failed to reallocate array.");
 		obj->texcoords = tmp;
 	}
 	obj->texcoords[obj->texcoordsSize++] = x;
@@ -52,7 +52,7 @@ static void addNormalCB(void *prv, float x, float y, float z) {
 	struct ObjBuilder *obj = prv;
 	if (obj->normalsSize + 3 > obj->normalsCapacity) {
 		float *tmp = realloc(obj->normals, sizeof(float) * (obj->normalsCapacity *= 2));
-		// if (!tmp) goto error;
+		assert(tmp && "Failed to reallocate array.");
 		obj->normals = tmp;
 	}
 	obj->normals[obj->normalsSize++] = x;
@@ -64,7 +64,7 @@ static void addFaceCB(void *prv, int numVertices, struct ObjVertexIndex *indices
 	struct ObjBuilder *obj = prv;
 	if (obj->indicesSize + numVertices > obj->indicesCapacity) {
 		struct ObjVertexIndex *tmp = realloc(obj->indices, sizeof(struct ObjVertexIndex) * (obj->indicesCapacity *= 2));
-		// if (!tmp) goto error;
+		assert(tmp && "Failed to reallocate array.");
 		obj->indices = tmp;
 	}
 	for (int i = 0; i < numVertices; ++i) {
@@ -81,10 +81,6 @@ static void pushGroup(struct ObjBuilder *obj, int materialIndex) {
 	group->next = 0;
 
 	// Add it into list
-	/*struct ObjGroup **headPtr = &obj->groupHead;
-	while (*headPtr)
-		headPtr = &(*headPtr)->next;
-	*headPtr = group;*/
 	*(obj->currentGroup ? &obj->currentGroup->next : &obj->groupHead) = group;
 	obj->currentGroup = group;
 }
@@ -103,6 +99,8 @@ static void mtllib(void *prv, char *path) {
 	assert(data && "Failed to load file.");
 	unsigned int numMaterials;
 	struct MtlMaterial *loadedMaterials = loadMtl(data, &numMaterials, 0);
+	free(data);
+
 	struct MtlMaterial *tmp = realloc(obj->materials, sizeof(struct MtlMaterial) * (obj->numMaterials + numMaterials));
 	assert(tmp);
 	obj->materials = tmp;
@@ -159,72 +157,62 @@ struct Model *loadModelFromObj(const char *path) {
 	struct ObjParserContext context = { &obj, addVertexCB, addTexcoordCB, addNormalCB, addFaceCB, addGroupCB, mtllib, usemtl, mallocCB, freeCB, OBJ_TRIANGULATE };
 	objParse(&context, buffer);
 
-	printf("numFaces: %d\n", obj.numFaces);
-
 	unsigned int vertexCount = 0, indexCount = 0;
 	// Assume that each face is a triangle
 	GLfloat *vertices = malloc(sizeof(float) * obj.numFaces * 3 * (3 + 2 * obj.texcoordsSize + 3 * obj.normalsSize));
 	unsigned int *indices = malloc(sizeof(unsigned int) * obj.numFaces * 3);
 	for (unsigned face = 0, k = 0; face < obj.numFaces; ++face) {
-		for (unsigned i = 0; i < 3; ++i) {
+		for (unsigned i = 0; i < 3; ++i, ++indexCount) {
 			struct ObjVertexIndex vi = obj.indices[indexCount];
 			unsigned int vertexIndex = vi.vertexIndex * 3, texcoordIndex = vi.texcoordIndex * 2, normalIndex = vi.normalIndex * 3;
-			int existingVertex = 0;
 
 			for (int j = 0; j < indexCount; ++j) {
 				struct ObjVertexIndex vi2 = obj.indices[j];
 				if (vi.vertexIndex == vi2.vertexIndex && vi.texcoordIndex == vi2.texcoordIndex && vi.normalIndex == vi2.normalIndex) {
 					indices[indexCount] = indices[j];
-					existingVertex = 1;
-					break;
+					goto existingVertex;
 				}
 			}
 
-			if (!existingVertex) {
-				indices[indexCount] = k++;
-				vertices[vertexCount++] = obj.vertices[vertexIndex];
-				vertices[vertexCount++] = obj.vertices[vertexIndex + 1];
-				vertices[vertexCount++] = obj.vertices[vertexIndex + 2];
-				if (vi.texcoordIndex != -1) {
-					vertices[vertexCount++] = obj.vertices[texcoordIndex];
-					vertices[vertexCount++] = obj.vertices[texcoordIndex + 1];
-				}
-				if (vi.normalIndex != -1) {
-					vertices[vertexCount++] = obj.normals[normalIndex];
-					vertices[vertexCount++] = obj.normals[normalIndex + 1];
-					vertices[vertexCount++] = obj.normals[normalIndex + 2];
-				}
+			indices[indexCount] = k++;
+			vertices[vertexCount++] = obj.vertices[vertexIndex];
+			vertices[vertexCount++] = obj.vertices[vertexIndex + 1];
+			vertices[vertexCount++] = obj.vertices[vertexIndex + 2];
+			if (vi.texcoordIndex != -1) {
+				vertices[vertexCount++] = obj.vertices[texcoordIndex];
+				vertices[vertexCount++] = obj.vertices[texcoordIndex + 1];
 			}
-
-			++indexCount;
+			if (vi.normalIndex != -1) {
+				vertices[vertexCount++] = obj.normals[normalIndex];
+				vertices[vertexCount++] = obj.normals[normalIndex + 1];
+				vertices[vertexCount++] = obj.normals[normalIndex + 2];
+			}
+existingVertex:;
 		}
 	}
-	printf("vertexCount: %d, indexCount: %d.\n", vertexCount, indexCount);
 	free(buffer);
-
-	// Create a Vertex Buffer Object and copy the vertex data to it
-	GLuint vertexBuffer;
-	glGenBuffers(1, &vertexBuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-	glBufferData(GL_ARRAY_BUFFER, vertexCount * sizeof(GLfloat), vertices, GL_STATIC_DRAW);
-	GLuint indexBuffer;
-	glGenBuffers(1, &indexBuffer);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * indexCount, indices, GL_STATIC_DRAW);
+	printf("numFaces: %d, vertexCount: %d, indexCount: %d.\n", obj.numFaces, vertexCount, indexCount);
 
 	struct Model *model = malloc(sizeof(struct Model));
-	model->vertexBuffer = vertexBuffer;
-	model->indexBuffer = indexBuffer;
-	model->stride = sizeof(GLfloat) * (3 + 3 * !!obj.normalsSize + 2 * !!obj.texcoordsSize);
-	printf("model->stride: %d\n", model->stride);
+	model->stride = sizeof(GLfloat) * (3 + 2 * !!obj.texcoordsSize + 3 * !!obj.normalsSize);
+	model->indexCount = indexCount;
+	// Copy geometry to the GPU
+	glGenBuffers(1, &model->vertexBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertexCount, vertices, GL_STATIC_DRAW);
+	free(vertices);
+	glGenBuffers(1, &model->indexBuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * indexCount, indices, GL_STATIC_DRAW);
+	free(indices);
 
 	struct ObjGroup defaultGroup = { 0, -1, 0 };
-	if (!obj.groupHead)
-		obj.groupHead = &defaultGroup;
+	if (!obj.groupHead) obj.groupHead = &defaultGroup;
 
+	// Count the number of parts
 	int numParts = 0;
 	struct ObjGroup *group = obj.groupHead;
-	do ++numParts; while (group = group->next);
+	do ++numParts; while ((group = group->next));
 	struct ModelPart *parts = malloc(sizeof(struct ModelPart) * numParts);
 	group = obj.groupHead;
 	for (int i = 0; i < numParts; ++i) {
@@ -249,12 +237,11 @@ struct Model *loadModelFromObj(const char *path) {
 		material->diffuse[2] = mtl->diffuse[2];
 	}
 
-	model->indexCount = indexCount;
 	return model;
 }
 
 void destroyModel(struct Model *model) {
-	glDeleteBuffers(1, &model->vertexBuffer);
-	glDeleteBuffers(1, &model->indexBuffer);
+	GLuint buffers[] = { model->vertexBuffer, model->indexBuffer };
+	glDeleteBuffers(2, buffers);
 	free(model);
 }
