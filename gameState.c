@@ -79,7 +79,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;
 	gameState->pitch = 0;
-	gameState->objModel = loadModelFromObj("cube.obj");
+	gameState->objModel = loadModelFromObj("pyramid.obj");
 	if (!gameState->objModel) {
 		printf("Failed to load model.\n");
 	}
