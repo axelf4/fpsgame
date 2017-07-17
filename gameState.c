@@ -52,12 +52,8 @@ static void gameStateDraw(struct State *state, float dt) {
 
 static void gameStateResize(struct State *state, int width, int height) {
 	struct GameState *gameState = (struct GameState *) state;
+	rendererResize(&gameState->renderer, width, height);
 	widgetLayout(gameState->flexLayout, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
-
-	// gameState->projection = MatrixPerspective(90.f, (float) width / height, zNear, zFar);
-	// glUseProgram(gameState->program);
-	// ALIGN(16) float mv[16];
-	// glUniformMatrix4fv(gameState->projectionUniform, 1, GL_FALSE, MatrixGet(mv, gameState->projection));
 }
 
 static struct FlexParams params0 = { ALIGN_END, -1, 100, UNDEFINED, 20, 0, 20, 20 },
@@ -78,7 +74,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	state->resize = gameStateResize;
 	gameState->batch = batch;
 	struct Renderer *renderer = &gameState->renderer;
-	rendererInit(renderer);
+	rendererInit(renderer, 800, 600);
 
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;

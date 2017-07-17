@@ -8,7 +8,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-#define DEPTH_SIZE 1024
+#define DEPTH_SIZE 16384
 #define Z_NEAR (1.0f)
 #define Z_FAR (100.0f)
 #define FOV (90.0f)
@@ -157,28 +157,53 @@ static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightV
 }
 
 static void drawModelGeometry(struct Model *model, const GLuint attrib) {
-		glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-		glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-		for (int i = 0; i < model->numParts; ++i) {
-			struct ModelPart *part = model->parts + i;
-			glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
-		}
+	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+	for (int i = 0; i < model->numParts; ++i) {
+		struct ModelPart *part = model->parts + i;
+		glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
+	}
 }
 
 static void drawModelGeometryNormal(struct Model *model, const GLuint posAttrib, const GLuint normalAttrib) {
-		glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-		glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-		glVertexAttribPointer(normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-		for (int i = 0; i < model->numParts; ++i) {
-			struct ModelPart *part = model->parts + i;
-			glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
-		}
+	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+	glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+	glVertexAttribPointer(normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+	for (int i = 0; i < model->numParts; ++i) {
+		struct ModelPart *part = model->parts + i;
+		glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
+	}
 }
 
-int rendererInit(struct Renderer *renderer) {
+void rendererResize(struct Renderer *renderer, int width, int height) {
+	ALIGN(16) float mv[16];
+	renderer->width = width;
+	renderer->height = height;
+	renderer->projection = MatrixPerspective(FOV, (float) width / height, Z_NEAR, Z_FAR);
+
+	glUseProgram(renderer->ssaoProgram);
+	const float projScale = width / (-2.0f * tanf(DEGREES_TO_RADIANS(0.5f * FOV)));
+	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "projScale"), projScale);
+	MatrixGet(mv, renderer->projection);
+	glUniform4f(glGetUniformLocation(renderer->ssaoProgram, "projInfo"), 2.0f / (width * mv[0]), 2.0f / (height * mv[5]), -1.0f / mv[0], -1.0f / mv[5]);
+	glUniform2f(glGetUniformLocation(renderer->ssaoProgram, "invResolution"), 1.0f / width, 1.0f / height);
+
+	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+	glBindTexture(GL_TEXTURE_2D, renderer->sceneTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, renderer->ssaoTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+}
+
+int rendererInit(struct Renderer *renderer, int width, int height) {
 	ALIGN(16) float vv[4], mv[16];
+	renderer->width = width;
+	renderer->height = height;
 	const GLchar *vertexShaderSource = "attribute vec3 position;"
 		"attribute vec3 normal;"
 		"uniform mat4 mvp;"
@@ -249,7 +274,7 @@ int rendererInit(struct Renderer *renderer) {
 			"		vec4 shadowCoord = lightSpacePos[i];\n" // shadowPos
 			"#ifdef GL_EXT_gpu_shader4\n"
 			"		vec2 dz_duv = depthGradient(shadowCoord.xy, shadowCoord.z);"
-			"		shadowCoord.z -= min(2.0 * dot(vec2(1.0) / 1024.0, abs(dz_duv)), 0.01);"
+			"		shadowCoord.z -= min(2.0 * dot(vec2(1.0) / 1024.0, abs(dz_duv)), 0.005);"
 			"		float sum = 0.0;"
 			"		for (int j = 0; j < 25; ++j) {"
 			"				vec2 offset = poisson[j] / 1024.0;"
@@ -278,7 +303,7 @@ int rendererInit(struct Renderer *renderer) {
 	renderer->modelUniform = glGetUniformLocation(program, "model");
 	glUseProgram(program);
 	renderer->model = MatrixIdentity();
-	renderer->projection = MatrixPerspective(FOV, 800.0f / 600.0f, 1.0f, 100.0f);
+	renderer->projection = MatrixPerspective(FOV, (float) width / height, Z_NEAR, Z_FAR);
 	glUniformMatrix4fv(renderer->modelUniform, 1, GL_FALSE, MatrixGet(mv, renderer->model));
 
 	// Shadow mapping
@@ -295,7 +320,7 @@ int rendererInit(struct Renderer *renderer) {
 	// Create the depth buffers
 	glGenTextures(1, &renderer->depthTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -325,7 +350,7 @@ int rendererInit(struct Renderer *renderer) {
 
 	glGenTextures(1, &renderer->sceneTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->sceneTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 800, 600, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -375,13 +400,6 @@ int rendererInit(struct Renderer *renderer) {
 			"vec3 reconstructCSPosition(vec2 S, float z) {"
 			"	return vec3((S * projInfo.xy + projInfo.zw) * z, z);"
 			"}"
-			// Reconstructs screen-space unit normal from screen-space position
-			"vec3 reconstructCSFaceNormal(vec3 C) {"
-			"	return normalize(cross(dFdy(C), dFdx(C)));"
-			"}"
-			"vec3 reconstructNonUnitCSFaceNormal(vec3 C) {"
-			"	return cross(dFdy(C), dFdx(C));"
-			"}"
 			/* Returns a unit vector and a screen-space radius for the tap on a unit disk (the caller should scale by the actual disk radius) */
 			"vec2 tapLocation(int sampleNumber, float spinAngle, out float ssR) {"
 			"	float alpha = (float(sampleNumber) + 0.5) * (1.0 / float(NUM_SAMPLES));" // Radius relative to ssR
@@ -426,35 +444,35 @@ int rendererInit(struct Renderer *renderer) {
 			"	packKey(CSZToKey(C.z), gl_FragColor.gb);"
 			// "	if (C.z < FAR_PLANE_Z) discard;"
 			"	float randomPatternRotationAngle = float((3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10);"
-			"	vec3 n_C = reconstructCSFaceNormal(C);"
+			"	vec3 n_C = normalize(cross(dFdy(C), dFdx(C)));" // Reconstruct screen-space unit normal from screen-space position
 			"	float ssDiskRadius = -projScale * radius / C.z;"
 			"	float sum = 0.0;"
 			"	for (int i = 0; i < NUM_SAMPLES; ++i) {"
 			"		sum += sampleAO(ssC, C, n_C, ssDiskRadius, i, randomPatternRotationAngle);"
 			"	}"
 			"	float A = max(0.0, 1.0 - sum * intensityDivR6 * (5.0 / float(NUM_SAMPLES)));"
-			"	if (abs(dFdx(C.z)) < 0.02) A -= dFdx(A) * (float(ssC.x & 1) - 0.5);"
-			"	if (abs(dFdy(C.z)) < 0.02) A -= dFdy(A) * (float(ssC.y & 1) - 0.5);"
+			// "	if (abs(dFdx(C.z)) < 0.02) A -= dFdx(A) * (float(ssC.x & 1) - 0.5);"
+			// "	if (abs(dFdy(C.z)) < 0.02) A -= dFdy(A) * (float(ssC.y & 1) - 0.5);"
 			"	gl_FragColor.r = A;"
 			"}";
 	renderer->ssaoProgram = createProgramVertFrag(ssaoVertexShaderSource, ssaoFragmentShaderSource);
 	glUseProgram(renderer->ssaoProgram);
-	const float radius = 0.5f;
+	const float radius = 1.0f;
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "radius"), radius);
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "bias"), 0.012f);
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "intensityDivR6"), 1.0f / pow(radius, 6.0f));
-	const float projScale = 800.0f / (-2.0f * tanf(DEGREES_TO_RADIANS(0.5f * FOV)));
-	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "projScale"), projScale);
 	// Clipping plane constants for use by reconstructZ
 	const float clipInfo[] = {Z_NEAR * Z_FAR, Z_NEAR - Z_FAR, Z_FAR};
 	glUniform3fv(glGetUniformLocation(renderer->ssaoProgram, "clipInfo"), 1, clipInfo);
+	const float projScale = width / (-2.0f * tanf(DEGREES_TO_RADIANS(0.5f * FOV)));
+	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "projScale"), projScale);
 	MatrixGet(mv, renderer->projection);
-	glUniform4f(glGetUniformLocation(renderer->ssaoProgram, "projInfo"), 2.0f / (800.0f * mv[0]), 2.0f / (600.0f * mv[5]), -1.0f / mv[0], -1.0f / mv[5]);
-	glUniform2f(glGetUniformLocation(renderer->ssaoProgram, "invResolution"), 1.0f / 800.0f, 1.0f / 600.0f);
+	glUniform4f(glGetUniformLocation(renderer->ssaoProgram, "projInfo"), 2.0f / (width * mv[0]), 2.0f / (height * mv[5]), -1.0f / mv[0], -1.0f / mv[5]);
+	glUniform2f(glGetUniformLocation(renderer->ssaoProgram, "invResolution"), 1.0f / width, 1.0f / height);
 
 	glGenTextures(1, &renderer->ssaoTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->ssaoTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 800, 600, 0, GL_RGB, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -525,7 +543,7 @@ int rendererInit(struct Renderer *renderer) {
 
 	glGenTextures(1, &renderer->blurTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 800, 600, 0, GL_RGB, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -536,27 +554,27 @@ int rendererInit(struct Renderer *renderer) {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderer->blurTexture, 0);
 
 	const GLchar *motionBlurFragmentShaderSource = "#define NUM_SAMPLES (10)\n"
-			"varying vec2 texCoord;"
-			"uniform sampler2D texture;"
-			"uniform sampler2D cszTexture;"
-			"uniform mat4 viewProjectionInverse;"
-			"uniform mat4 prevViewProjection;"
-			"uniform float blurFactor;"
-			"void main() {"
-			"	vec4 H = vec4(2.0 * texCoord - 1.0, texture2D(cszTexture, texCoord).x, 1.0);"
-			"	vec4 D = viewProjectionInverse * H;"
-			"	vec4 worldPos = D / D.w;"
-			"	vec4 currentPos = H;"
-			"	vec4 previousPos = prevViewProjection * worldPos;"
-			"	previousPos /= previousPos.w;"
-			"	vec2 velocity = blurFactor * (currentPos.xy - previousPos.xy) * 0.5;"
-			"	vec4 result = texture2D(texture, texCoord);"
-			"	for (int i = 1; i < NUM_SAMPLES; ++i) {"
-			"		vec2 offset = velocity * (float(i) / float(NUM_SAMPLES - 1) - 0.5);"
-			"		result += texture2D(texture, texCoord + offset);"
-			"	}"
-			"	gl_FragColor = result / float(NUM_SAMPLES);"
-			"}";
+		"varying vec2 texCoord;"
+		"uniform sampler2D texture;"
+		"uniform sampler2D cszTexture;"
+		"uniform mat4 viewProjectionInverse;"
+		"uniform mat4 prevViewProjection;"
+		"uniform float blurFactor;"
+		"void main() {"
+		"	vec4 H = vec4(2.0 * texCoord - 1.0, texture2D(cszTexture, texCoord).x, 1.0);"
+		"	vec4 D = viewProjectionInverse * H;"
+		"	vec4 worldPos = D / D.w;"
+		"	vec4 currentPos = H;"
+		"	vec4 previousPos = prevViewProjection * worldPos;"
+		"	previousPos /= previousPos.w;"
+		"	vec2 velocity = blurFactor * (currentPos.xy - previousPos.xy) * 0.5;"
+		"	vec4 result = texture2D(texture, texCoord);"
+		"	for (int i = 1; i < NUM_SAMPLES; ++i) {"
+		"		vec2 offset = velocity * (float(i) / float(NUM_SAMPLES - 1) - 0.5);"
+		"		result += texture2D(texture, texCoord + offset);"
+		"	}"
+		"	gl_FragColor = result / float(NUM_SAMPLES);"
+		"}";
 	renderer->motionBlurProgram = createProgram(2, fullscreenVertexShader, 0,
 			createShader(GL_FRAGMENT_SHADER, 1, motionBlurFragmentShaderSource), 0);
 	glUseProgram(renderer->motionBlurProgram);
@@ -595,10 +613,24 @@ int rendererInit(struct Renderer *renderer) {
 
 void rendererDestroy(struct Renderer *renderer) {
 	glDeleteProgram(renderer->program);
+	glDeleteFramebuffers(1, &renderer->sceneFbo);
+	glDeleteTextures(1, &renderer->sceneTexture);
+	glDeleteProgram(renderer->depthProgram);
+	glDeleteFramebuffers(1, &renderer->depthFbo);
+	glDeleteTextures(1, &renderer->depthTexture);
+	glDeleteTextures(NUM_SPLITS, renderer->shadowMaps);
 
 	glDeleteBuffers(1, &renderer->quadBuffer);
-	glDeleteProgram(renderer->skyboxProgram);
+	glDeleteProgram(renderer->ssaoProgram);
+	glDeleteTextures(1, &renderer->ssaoTexture);
+	glDeleteFramebuffers(1, &renderer->ssaoFbo);
+	glDeleteProgram(renderer->blur1Program);
+	glDeleteProgram(renderer->blur2Program);
+	glDeleteTextures(1, &renderer->blurTexture);
+	glDeleteFramebuffers(1, &renderer->blurFbo);
+	glDeleteProgram(renderer->motionBlurProgram);
 	glDeleteTextures(1, &renderer->skyboxTexture);
+	glDeleteProgram(renderer->skyboxProgram);
 }
 
 void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float dt) {
@@ -629,7 +661,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	struct Frustum f[NUM_SPLITS];
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		f[i].fov = DEGREES_TO_RADIANS(FOV) + 0.2f;
-		f[i].ratio = (float) 800 / 600;
+		f[i].ratio = (float) renderer->width / renderer->height;
 		f[i].neard = splitDistances[i];
 		f[i].fard = splitDistances[i + 1] * 1.005f;
 	}
@@ -658,7 +690,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 		glDisableVertexAttribArray(renderer->depthProgramPosition);
 	}
 	// glCullFace(GL_BACK);
-	glViewport(0, 0, 800, 600);
+	glViewport(0, 0, renderer->width, renderer->height);
 
 	// Depth pass
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
@@ -748,7 +780,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->blurFbo);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glBindTexture(GL_TEXTURE_2D, renderer->ssaoTexture);
-	glUniform2f(glGetUniformLocation(renderer->blur1Program, "invResolutionDirection"), 1 / 800.0f, 0);
+	glUniform2f(glGetUniformLocation(renderer->blur1Program, "invResolutionDirection"), 1.0f / renderer->width, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 	glUseProgram(renderer->blur2Program);
@@ -756,7 +788,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ZERO, GL_SRC_COLOR);
 	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
-	glUniform2f(glGetUniformLocation(renderer->blur2Program, "invResolutionDirection"), 0, 1 / 600.0f);
+	glUniform2f(glGetUniformLocation(renderer->blur2Program, "invResolutionDirection"), 0, 1.0f / renderer->height);
 	glEnableVertexAttribArray(glGetAttribLocation(renderer->blur2Program, "position"));
 	glVertexAttribPointer(glGetAttribLocation(renderer->blur2Program, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);

@@ -13,6 +13,7 @@ struct ModelInstance {
 };
 
 struct Renderer {
+	int width, height;
 	MATRIX model, view, projection, prevViewProjection;
 	GLuint program;
 	GLint posAttrib, normalAttrib, mvpUniform, modelUniform;
@@ -34,7 +35,9 @@ struct Renderer {
 	struct ModelInstance instances[64];
 };
 
-int rendererInit(struct Renderer *renderer);
+int rendererInit(struct Renderer *renderer, int width, int height);
+
+void rendererResize(struct Renderer *renderer, int width, int height);
 
 void rendererDestroy(struct Renderer *renderer);
 
