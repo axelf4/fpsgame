@@ -76,7 +76,7 @@ int main(int argc, char *arcv[]) {
 	}
 
 	glEnable(GL_CULL_FACE);
-	glClearColor(0.3, 0.7, 0.1, 1.0);
+	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 
 	spriteBatchInitialize(&batch, 32);
 	batch.projectionMatrix = MatrixOrtho(0, 800, 600, 0, -1, 1);

@@ -36,7 +36,6 @@ static void gameStateUpdate(struct State *state, float dt) {
 	gameState->position = position;
 }
 
-
 static void gameStateDraw(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
 	struct SpriteBatch *batch = gameState->batch;
@@ -73,8 +72,10 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	state->draw = gameStateDraw;
 	state->resize = gameStateResize;
 	gameState->batch = batch;
+	struct EntityManager *manager = &gameState->manager;
+	entityManagerInit(manager);
 	struct Renderer *renderer = &gameState->renderer;
-	rendererInit(renderer, 800, 600);
+	rendererInit(renderer, manager, 800, 600);
 
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;
@@ -87,8 +88,20 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	if (!gameState->groundModel) {
 		printf("Failed to load ground model.\n");
 	}
-	renderer->instances[0].model = gameState->objModel;
-	renderer->instances[1].model = gameState->groundModel;
+
+	Entity player = entityManagerSpawn(manager);
+	manager->entityMasks[player] = POSITION_COMPONENT_MASK;
+	manager->positions[player].position = VectorSet(0, 0, 0, 1);
+
+	Entity ground = entityManagerSpawn(manager);
+	manager->entityMasks[ground] = POSITION_COMPONENT_MASK | MODEL_COMPONENT_MASK;
+	manager->positions[ground].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+	manager->models[ground].model = gameState->groundModel;
+
+	Entity enemy = entityManagerSpawn(manager);
+	manager->entityMasks[enemy] = POSITION_COMPONENT_MASK | MODEL_COMPONENT_MASK;
+	manager->positions[enemy].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+	manager->models[enemy].model = gameState->objModel;
 
 	// Initialize GUI
 	gameState->flexLayout = malloc(sizeof(struct FlexLayout));
