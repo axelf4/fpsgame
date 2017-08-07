@@ -184,8 +184,6 @@ void rendererResize(struct Renderer *renderer, int width, int height) {
 	renderer->height = height;
 	renderer->projection = MatrixPerspective(FOV, (float) width / height, Z_NEAR, Z_FAR);
 
-	printf("resizing the fucker\n");
-
 	glUseProgram(renderer->ssaoProgram);
 	const float projScale = width / (-2.0f * tanf(DEGREES_TO_RADIANS(0.5f * FOV)));
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "projScale"), projScale);
@@ -381,17 +379,15 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 		"}";
 	GLuint fullscreenVertexShader = createShader(GL_VERTEX_SHADER, 1, fullscreenVertexShaderSource);
 
-	// Scalable Ambient Obscurance
+	// Screen Space Ambient Occlusion
 	const GLchar *ssaoFragmentShaderSource = "#ifdef GL_ES\n"
 			"precision mediump float;\n"
 			"#endif\n"
 			"#extension GL_EXT_gpu_shader4 : require\n"
 			"#extension GL_OES_standard_derivatives : require\n"
-			"#define NUM_SAMPLES (256)\n" // 11
-			"#define FAR_PLANE_Z (-100.0)\n"
-			"#define NUM_SPIRAL_TURNS (11)\n" // 7
-			"#define LOG_MAX_OFFSET (3)\n"
-			"#define MAX_MIP_LEVEL (5)\n"
+			"#define NUM_SAMPLES (31)\n"
+			"#define FAR_PLANE_Z (99.0)\n"
+			"#define NUM_SPIRAL_TURNS (7)\n"
 			"varying vec2 texCoord;"
 			"uniform float radius;"
 			"uniform float projScale;"
@@ -404,10 +400,9 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"float reconstructCSZ(float d) {"
 			"	return clipInfo[0] / (clipInfo[1] * d + clipInfo[2]);"
 			"}"
-			// Read the camera-space position of the point at screen-space pixel ssP.
+			// Read the camera-space position of the point at screen-space position ssP.
 			"vec3 getPosition(vec2 ssP) {"
 			"	float z = reconstructCSZ(texture2D(depthTexture, ssP).r);"
-			// Reconstruct camera-space P.xyz from screen-space S = (x, y) in pixels and camera-space z < 0
 			"	return vec3((ssP * projInfo.xy + projInfo.zw) * z, z);"
 			"}"
 			"float CSZToKey(float z) {"
@@ -420,9 +415,8 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"}"
 			// Returns a unit vector and a screen-space radius for the tap on a unit disk (the caller should scale by the actual disk radius)
 			"vec2 tapLocation(int sampleNumber, float spinAngle, out float ssR) {"
-			"	float alpha = (float(sampleNumber) + 0.5) * (1.0 / float(NUM_SAMPLES));" // Radius relative to ssR
-			"	float angle = alpha * (float(NUM_SPIRAL_TURNS) * 6.28) + spinAngle;"
-			"	ssR = alpha;"
+			"	ssR = (float(sampleNumber) + 0.5) * (1.0 / float(NUM_SAMPLES));"
+			"	float angle = ssR * (float(NUM_SPIRAL_TURNS) * 6.28) + spinAngle;"
 			"	return vec2(cos(angle), sin(angle));"
 			"}"
 			"float radius2 = radius * radius;"
@@ -439,9 +433,10 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"void main() {"
 			"	vec2 ssC = texCoord;" // Pixel being shaded
 			"	vec3 C = getPosition(ssC);" // World space point being shaded
+			"	if (C.z >= FAR_PLANE_Z) discard;"
 			"	vec3 n_C = normalize(cross(dFdy(C), dFdx(C)));" // Reconstruct screen-space unit normal from screen-space position
 			// "	float randomPatternRotationAngle = float((3 * ssC.x ^ ssC.y + ssC.x * ssC.y) * 10);"
-			"	float randomPatternRotationAngle = fract(52.9829189 * fract(dot(vec2(ssC), vec2(0.06711056, 0.00583715))));"
+			"	float randomPatternRotationAngle = 1000.0 * fract(52.9829189 * fract(dot(ssC, vec2(0.06711056, 0.00583715))));"
 			"	float ssDiskRadius = projScale * radius / C.z;"
 			"	float sum = 0.0;"
 			"	for (int i = 0; i < NUM_SAMPLES; ++i) {"
