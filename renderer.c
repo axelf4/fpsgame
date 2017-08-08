@@ -87,13 +87,15 @@ static void getSplitDistances(float *splitDistances, float near, float far) {
 
 /**
  * Computes the 8 corners of the current view frustum.
+ * @param f The view frustum.
+ * @param center The position of the camera.
+ * @param viewDir The normalized direction the camera is looking.
+ * @param up The normalized up vector.
  * @param points Gets set to the corners of the frustum.
  */
-static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VECTOR *points) {
-	VECTOR up = VectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-	VECTOR right = VectorCross(viewDir, up);
-	right = Vector4Normalize(right);
-	up = Vector4Normalize(VectorCross(right, viewDir));
+static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VECTOR up, VECTOR *points) {
+	// VECTOR up = VectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	VECTOR right = Vector4Normalize(VectorCross(viewDir, up));
 	const VECTOR fc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.fard))),
 		  nc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.neard)));
 	// Half the heights and widths of the near and far plane rectangles
@@ -522,11 +524,12 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	renderer->blur1Program = createProgram(2, fullscreenVertexShader, DONT_DELETE_SHADER,
 			createShader(GL_FRAGMENT_SHADER, 2, "#define AO_PACK_KEY\n", blurFragmentShaderSource), 0);
 	glUseProgram(renderer->blur1Program);
-	glUniform1f(glGetUniformLocation(renderer->blur1Program, "sharpness"), 40.0f);
+	const float sharpness = 40.0f;
+	glUniform1f(glGetUniformLocation(renderer->blur1Program, "sharpness"), sharpness);
 	renderer->blur2Program = createProgram(2, fullscreenVertexShader, DONT_DELETE_SHADER,
 			createShader(GL_FRAGMENT_SHADER, 1, blurFragmentShaderSource), 0);
 	glUseProgram(renderer->blur2Program);
-	glUniform1f(glGetUniformLocation(renderer->blur2Program, "sharpness"), 40.0f);
+	glUniform1f(glGetUniformLocation(renderer->blur2Program, "sharpness"), sharpness);
 
 	glGenTextures(1, &renderer->blurTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
@@ -618,7 +621,7 @@ void rendererDestroy(struct Renderer *renderer) {
 	glDeleteProgram(renderer->skyboxProgram);
 }
 
-void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float dt) {
+void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float roll, float dt) {
 	ALIGN(16) float vv[4], mv[16];
 	struct EntityManager *manager = renderer->manager;
 	glEnable(GL_DEPTH_TEST);
@@ -630,63 +633,56 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 			0.5f, 0.5f, 0.5f, 1.0f);
 	const VECTOR viewDir = VectorSet(-cos(pitch) * sin(yaw), sin(pitch), -cos(pitch) * cos(yaw), 0.0f);
 
-	const MATRIX rotationViewMatrix = MatrixRotationQuaternion(QuaternionRotationRollPitchYaw(pitch, yaw, 0)),
+	const MATRIX rotationViewMatrix = MatrixRotationQuaternion(QuaternionRotationRollPitchYaw(pitch, yaw, roll)),
 		  viewInverse = MatrixMultiply(MatrixTranslationFromVector(position), rotationViewMatrix);
 	renderer->view = MatrixInverse(viewInverse);
 	const MATRIX modelView = MatrixMultiply(renderer->view, renderer->model),
 		  invModelView = MatrixInverse(modelView);
 	MATRIX mvp = MatrixMultiply(renderer->projection, MatrixMultiply(renderer->view, renderer->model));
+	VECTOR up = VectorTransform(VectorSet(0.0f, 1.0f, 0.0f, 0.0f), rotationViewMatrix);
 
 	// Shadow map pass
 	glViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE);
 	glUseProgram(renderer->depthProgram);
-	glActiveTexture(GL_TEXTURE0);
+	glEnableVertexAttribArray(renderer->depthProgramPosition);
+	glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
 	// glCullFace(GL_FRONT); // Avoid peter-panning
+	const VECTOR lightDir = Vector4Normalize(VectorSet(-1.0f, -1.0f, 1.0f, 0.0f));
+	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 	float splitDistances[NUM_SPLITS + 1];
 	getSplitDistances(splitDistances, Z_NEAR, Z_FAR);
 	struct Frustum f[NUM_SPLITS];
+	MATRIX shadowCPM[NUM_SPLITS];
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		f[i].fov = DEGREES_TO_RADIANS(FOV) + 0.2f;
 		f[i].ratio = (float) renderer->width / renderer->height;
 		f[i].neard = splitDistances[i];
 		f[i].fard = splitDistances[i + 1] * 1.005f;
-	}
-	const VECTOR lightDir = Vector4Normalize(VectorSet(-1.0f, -1.0f, 1.0f, 0.0f));
-	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
 
-	MATRIX shadowCPM[NUM_SPLITS];
-	for (int i = 0; i < NUM_SPLITS; ++i) {
 		// Bind and clear current cascade
-		glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->shadowMaps[i], 0);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		// Compute camera frustum slice boundary points in world space
 		VECTOR frustumPoints[8];
-		getFrustumPoints(f[i], position, viewDir, frustumPoints);
-		MATRIX shadowMatrix;
+		getFrustumPoints(f[i], position, viewDir, up, frustumPoints);
 		calculateCropMatrix(f[i], frustumPoints, lightView, shadowCPM + i);
 		glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, shadowCPM[i]));
 
 		// Draw the model
-		glEnableVertexAttribArray(renderer->depthProgramPosition);
 		for (int j = 0; j < MAX_ENTITIES; ++j) {
 			if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
 				drawModelGeometry(manager->models[j].model, renderer->depthProgramPosition);
 			}
 		}
-		glDisableVertexAttribArray(renderer->depthProgramPosition);
 	}
 	// glCullFace(GL_BACK);
 	glViewport(0, 0, renderer->width, renderer->height);
 
 	// Depth pass
-	glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->depthTexture, 0);
 	glClear(GL_DEPTH_BUFFER_BIT);
-	glUseProgram(renderer->depthProgram);
 	glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, mvp));
-	glEnableVertexAttribArray(renderer->depthProgramPosition);
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) drawModelGeometry(manager->models[j].model, renderer->depthProgramPosition);
 	}

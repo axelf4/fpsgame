@@ -37,6 +37,6 @@ void rendererResize(struct Renderer *renderer, int width, int height);
 
 void rendererDestroy(struct Renderer *renderer);
 
-void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float dt);
+void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float roll, float dt);
 
 #endif

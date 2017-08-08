@@ -40,7 +40,7 @@ static void gameStateDraw(struct State *state, float dt) {
 	struct GameState *gameState = (struct GameState *) state;
 	struct SpriteBatch *batch = gameState->batch;
 
-	rendererDraw(&gameState->renderer, gameState->position, gameState->yaw, gameState->pitch, dt);
+	rendererDraw(&gameState->renderer, gameState->position, gameState->yaw, gameState->pitch, M_PI / 8, dt);
 
 	// Draw GUI
 	spriteBatchBegin(batch);
