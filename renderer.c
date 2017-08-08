@@ -169,7 +169,7 @@ static void drawModelGeometry(struct Model *model, const GLuint attrib) {
 	}
 }
 
-static void drawModelGeometryNormal(struct Model *model, const GLuint posAttrib, const GLuint normalAttrib) {
+static void drawModel(struct Model *model, const GLuint posAttrib, const GLuint normalAttrib) {
 	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
 	glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
 	glVertexAttribPointer(normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
@@ -543,7 +543,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->blurFbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderer->blurTexture, 0);
 
-	const GLchar *motionBlurFragmentShaderSource = "#define NUM_SAMPLES (10)\n"
+	const GLchar *motionBlurFragmentShaderSource = "#define NUM_SAMPLES (24)\n"
 		"varying vec2 texCoord;"
 		"uniform sampler2D texture;"
 		"uniform sampler2D depthTexture;"
@@ -734,7 +734,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glEnableVertexAttribArray(renderer->posAttrib);
 	glEnableVertexAttribArray(renderer->normalAttrib);
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
-		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) drawModelGeometryNormal(manager->models[j].model, renderer->posAttrib, renderer->normalAttrib);
+		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) drawModel(manager->models[j].model, renderer->posAttrib, renderer->normalAttrib);
 	}
 	glDisableVertexAttribArray(renderer->posAttrib);
 	glDisableVertexAttribArray(renderer->normalAttrib);
@@ -787,7 +787,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
 	MATRIX viewProjectionInverse = MatrixInverse(mvp);
 	glUniformMatrix4fv(renderer->motionBlurCurrToPrevUniform, 1, GL_FALSE, MatrixGet(mv, MatrixMultiply(renderer->prevViewProjection, viewProjectionInverse)));
-	glUniform1f(renderer->motionBlurFactorUniform, 20.0f / dt);
+	glUniform1f(renderer->motionBlurFactorUniform, 60.0f / dt);
 	renderer->prevViewProjection = MatrixMultiply(renderer->projection, renderer->view);
 	glEnableVertexAttribArray(glGetAttribLocation(renderer->motionBlurProgram, "position"));
 	glVertexAttribPointer(glGetAttribLocation(renderer->motionBlurProgram, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);

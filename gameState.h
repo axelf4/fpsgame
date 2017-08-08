@@ -9,6 +9,10 @@
 #include "font.h"
 #include "widget.h"
 
+struct PlayerData {
+	float turn;
+};
+
 typedef struct GameState {
 	struct State state;
 	struct SpriteBatch *batch;
@@ -23,6 +27,11 @@ typedef struct GameState {
 	struct Font *font;
 	struct Widget *flexLayout, *image0, *image1, *label;
 	GLuint cat;
+
+	int noclip : 1;
+	struct PlayerData playerData;
+
+	Entity player;
 } GameState;
 
 void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch);
