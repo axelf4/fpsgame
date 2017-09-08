@@ -22,6 +22,7 @@ struct ObjBuilder {
 	struct ObjVertexIndex *indices;
 	struct ObjGroup *groupHead, *currentGroup;
 	struct MtlMaterial *materials;
+	char *path;
 };
 
 static void addVertexCB(void *prv, float x, float y, float z, float w) {
@@ -87,15 +88,26 @@ static void pushGroup(struct ObjBuilder *obj, int materialIndex) {
 
 static void addGroupCB(void *prv, int numNames, char **names) {
 	struct ObjBuilder *obj = prv;
-	printf("group name: %s.\n", *names);
 	int materialIndex = obj->currentGroup ? obj->currentGroup->materialIndex : -1;
 	pushGroup(obj, materialIndex);
-
 }
 
 static void mtllib(void *prv, char *path) {
 	struct ObjBuilder *obj = prv;
-	char *data = readFile(path);
+	char *data;
+
+	char *lastSlash = strrchr(obj->path, '/');
+	if (lastSlash) {
+		int numChars = lastSlash - obj->path, len = strlen(path);
+		char *combinedPath = malloc(sizeof(char) * (numChars + 1 + len));
+		assert(combinedPath && "Failed to allocate memory.");
+		memcpy(combinedPath, obj->path, numChars);
+		combinedPath[numChars] = '/';
+		memcpy(combinedPath + numChars + 1, path, len);
+		data = readFile(combinedPath);
+		free(combinedPath);
+	} else data = readFile(path);
+
 	assert(data && "Failed to load file.");
 	unsigned int numMaterials;
 	struct MtlMaterial *loadedMaterials = loadMtl(data, &numMaterials, 0);
@@ -130,11 +142,11 @@ static void freeCB(void *ptr) {
 	free(ptr);
 }
 
-struct Model *loadModelFromObj(const char *path) {
+struct Model *loadModelFromObj(char *path) {
 	printf("loading model: %s\n", path);
 	char *buffer = readFile(path);
 	if (!buffer) {
-		printf("Error loading file: %s.\n", path);
+		fprintf(stderr, "Error loading file: %s.\n", path);
 		return 0;
 	}
 	struct ObjBuilder obj;
@@ -154,6 +166,7 @@ struct Model *loadModelFromObj(const char *path) {
 	obj.indices = malloc(sizeof(struct ObjVertexIndex) * obj.indicesCapacity);
 	obj.materials = 0;
 	obj.currentGroup = obj.groupHead = 0;
+	obj.path = path;
 	struct ObjParserContext context = { &obj, addVertexCB, addTexcoordCB, addNormalCB, addFaceCB, addGroupCB, mtllib, usemtl, mallocCB, freeCB, OBJ_TRIANGULATE };
 	objParse(&context, buffer);
 
@@ -219,8 +232,6 @@ existingVertex:;
 		struct ModelPart *part = parts + i;
 		part->offset = group->faceIndex * 3;
 		part->count = ((group->next ? group->next->faceIndex : obj.numFaces) - group->faceIndex) * 3;
-		printf("part->offset: %d\n", part->offset);
-		printf("part->count: %d\n", part->count);
 		part->materialIndex = group->materialIndex;
 
 		group = group->next;

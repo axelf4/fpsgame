@@ -21,7 +21,7 @@ typedef struct Model {
 	struct Material *materials;
 } Model;
 
-struct Model *loadModelFromObj(const char *path);
+struct Model *loadModelFromObj(char *path);
 
 void destroyModel(struct Model *model);
 
