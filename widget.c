@@ -69,14 +69,11 @@ void containerAddChild(struct Widget *widget, struct Widget *child) {
 	child->parent = widget;
 }
 
-/**
- * Simply draws all children.
- */
-static void containerDraw(struct Widget *widget, struct SpriteBatch *renderer) {
+void containerDrawChildren(struct Widget *widget, struct SpriteBatch *batch) {
 	struct Container *container = (struct Container *) widget;
 	for (int i = 0; i < container->childCount; ++i) {
 		struct Widget *child = container->children[i];
-		child->vtable->draw(child, renderer);
+		child->vtable->draw(child, batch);
 	}
 }
 
@@ -140,7 +137,7 @@ static void flexLayoutLayout(struct Widget *widget, float width, MeasureMode wid
 }
 
 static struct WidgetClass flexLayoutClass = {
-	flexLayoutLayout, containerDraw
+	flexLayoutLayout, containerDrawChildren
 };
 
 void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify) {

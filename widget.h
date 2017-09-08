@@ -53,6 +53,11 @@ void containerDestroy(struct Widget *widget);
 
 void containerAddChild(struct Widget *container, struct Widget *child);
 
+/**
+ * Convenience function to recursively draw all children.
+ */
+void containerDrawChildren(struct Widget *widget, struct SpriteBatch *batch);
+
 typedef struct FlexLayout {
 	struct Container container;
 	FlexDirection direction;
