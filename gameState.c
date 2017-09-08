@@ -150,8 +150,8 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->flexLayout = malloc(sizeof(struct FlexLayout));
 	flexLayoutInitialize(gameState->flexLayout, DIRECTION_ROW, ALIGN_START);
 
-	png_uint_32 width, height;
-	gameState->cat = loadPNGTexture("assets/cat.png", &width, &height);
+	int width, height;
+	gameState->cat = loadPngTexture("assets/cat.png", &width, &height);
 	if (!gameState->cat) {
 		fprintf(stderr, "Failed to load png image.\n");
 	}
