@@ -68,7 +68,6 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 			"void main() {"
 			"	float a = texture2D(texture, vTexCoord).a;"
 			"	gl_FragColor = vec4(color.rgb, color.a * a);"
-			"	gl_FragColor = texture2D(texture, vTexCoord);"
 			"}";
 	batch->textProgram = createProgramVertFrag(textVertexShaderSource, textFragmentShaderSource);
 }
