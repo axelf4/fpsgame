@@ -123,11 +123,11 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->position = VectorSet(0, 0, 0, 1);
 	gameState->yaw = 0;
 	gameState->pitch = 0;
-	gameState->objModel = loadModelFromObj("pyramid.obj");
+	gameState->objModel = loadModelFromObj("assets/pyramid.obj");
 	if (!gameState->objModel) {
 		printf("Failed to load model.\n");
 	}
-	gameState->groundModel = loadModelFromObj("ground.obj");
+	gameState->groundModel = loadModelFromObj("assets/ground.obj");
 	if (!gameState->groundModel) {
 		printf("Failed to load ground model.\n");
 	}
@@ -151,7 +151,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	flexLayoutInitialize(gameState->flexLayout, DIRECTION_ROW, ALIGN_START);
 
 	png_uint_32 width, height;
-	gameState->cat = loadPNGTexture("cat.png", &width, &height);
+	gameState->cat = loadPNGTexture("assets/cat.png", &width, &height);
 	if (!gameState->cat) {
 		fprintf(stderr, "Failed to load png image.\n");
 	}
@@ -165,7 +165,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->image1->layoutParams = &params1;
 	containerAddChild(gameState->flexLayout, gameState->image1);
 
-	gameState->font = loadFont("DejaVuSans.ttf", 512, 512);
+	gameState->font = loadFont("assets/DejaVuSans.ttf", 512, 512);
 	if (!gameState->font) {
 		printf("Could not load font.");
 	}

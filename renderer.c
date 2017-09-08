@@ -569,7 +569,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	renderer->motionBlurFactorUniform = glGetUniformLocation(renderer->motionBlurProgram, "factor");
 
 	// Skybox
-	char *skyboxData = readFile("skybox.dds");
+	char *skyboxData = readFile("assets/skybox.dds");
 	renderer->skyboxTexture = dds_load_texture_from_memory(skyboxData, 0, 0, 0);
 	free(skyboxData);
 	if (!renderer->skyboxTexture) {
