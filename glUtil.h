@@ -5,6 +5,8 @@
 #include <GL/glew.h>
 #include <vmath.h>
 
+/** Clamps a value between a minimum and maximum value. */
+#define CLAMP(x, a, b) ((x) < (a) ? (a) : (x) > (b) ? (b) : (x))
 #define BUFFER_OFFSET(i) ((char *)NULL + (i))
 
 enum {
