@@ -14,7 +14,7 @@ struct Renderer {
 	int width, height;
 	MATRIX model, view, projection, prevViewProjection;
 	GLuint program;
-	GLint posAttrib, normalAttrib, mvpUniform, modelUniform;
+	GLint posAttrib, normalAttrib, mvpUniform, modelUniform, colorUniform;
 
 	GLuint sceneFbo, sceneTexture;
 

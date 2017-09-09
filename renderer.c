@@ -159,27 +159,6 @@ static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightV
 	return minZ;
 }
 
-static void drawModelGeometry(struct Model *model, const GLuint attrib) {
-	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-	glVertexAttribPointer(attrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-	for (int i = 0; i < model->numParts; ++i) {
-		struct ModelPart *part = model->parts + i;
-		glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
-	}
-}
-
-static void drawModel(struct Model *model, const GLuint posAttrib, const GLuint normalAttrib) {
-	glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-	glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-	glVertexAttribPointer(normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
-	for (int i = 0; i < model->numParts; ++i) {
-		struct ModelPart *part = model->parts + i;
-		glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
-	}
-}
-
 void rendererResize(struct Renderer *renderer, int width, int height) {
 	ALIGN(16) float mv[16];
 	renderer->width = width;
@@ -229,6 +208,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"precision highp float;\n"
 			"#endif\n"
 			"varying vec3 vNormal;"
+			"uniform vec3 color;"
 			"uniform vec3 lightDir;"
 			"const int NUM_CASCADES = 3;"
 			"varying vec4 lightSpacePos[NUM_CASCADES];"
@@ -296,7 +276,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"void main() {"
 			"	float shadowFactor = calcShadowFactor();"
 			"	float intensity = max(dot(normalize(vNormal), normalize(-lightDir)), 0.0);"
-			"	gl_FragColor = vec4(shadowFactor * intensity * vec3(1.0, 1.0, 1.0), 1.0);"
+			"	gl_FragColor = vec4(shadowFactor * intensity * color, 1.0);"
 			"}";
 	renderer->program = createProgramVertFrag(vertexShaderSource, fragmentShaderSource);
 	if (!renderer->program) return 1;
@@ -306,6 +286,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	// Get the location of program uniforms
 	renderer->mvpUniform = glGetUniformLocation(renderer->program, "mvp");
 	renderer->modelUniform = glGetUniformLocation(renderer->program, "model");
+	renderer->colorUniform = glGetUniformLocation(renderer->program, "color");
 	glUseProgram(renderer->program);
 	renderer->model = MatrixIdentity();
 	renderer->projection = MatrixPerspective(FOV, (float) width / height, Z_NEAR, Z_FAR);
@@ -629,9 +610,55 @@ void rendererDestroy(struct Renderer *renderer) {
 	  glDeleteProgram(renderer->skyboxProgram);*/
 }
 
+static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection) {
+	ALIGN(16) float mv[16];
+	struct EntityManager *manager = renderer->manager;
+	for (int j = 0; j < MAX_ENTITIES; ++j) {
+		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
+			VECTOR position = manager->positions[j].position;
+			MATRIX mvp = MatrixMultiply(viewProjection, MatrixTranslationFromVector(position));
+			glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, mvp));
+			struct Model *model = manager->models[j].model;
+			glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+			glVertexAttribPointer(renderer->depthProgramPosition, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+			for (int i = 0; i < model->numParts; ++i) {
+				struct ModelPart *part = model->parts + i;
+				glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
+			}
+		}
+	}
+}
+
+static void drawEntities(struct Renderer *renderer, MATRIX viewProjection) {
+	ALIGN(16) float mv[16];
+	struct EntityManager *manager = renderer->manager;
+	for (int j = 0; j < MAX_ENTITIES; ++j) {
+		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
+			VECTOR position = manager->positions[j].position;
+			MATRIX mvp = MatrixMultiply(viewProjection, MatrixTranslationFromVector(position));
+			glUniformMatrix4fv(renderer->mvpUniform, 1, GL_FALSE, MatrixGet(mv, mvp));
+			struct Model *model = manager->models[j].model;
+			glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+			glVertexAttribPointer(renderer->posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+			glVertexAttribPointer(renderer->normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+			for (int i = 0; i < model->numParts; ++i) {
+				struct ModelPart *part = model->parts + i;
+				struct Material *material = part->materialIndex >= 0 ? model->materials + part->materialIndex : 0;
+				if (material) {
+					glUniform3fv(renderer->colorUniform, 1, material->diffuse);
+				} else {
+					glUniform3f(renderer->colorUniform, 1.0f, 1.0f, 1.0f);
+				}
+				glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
+			}
+		}
+	}
+}
+
 void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float roll, float dt) {
 	ALIGN(16) float vv[4], mv[16];
-	struct EntityManager *manager = renderer->manager;
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	const MATRIX bias = MatrixSet(
@@ -667,22 +694,15 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 		f[i].neard = splitDistances[i];
 		f[i].fard = splitDistances[i + 1] * 1.005f;
 
-		// Bind and clear current cascade
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->shadowMaps[i], 0);
-		glClear(GL_DEPTH_BUFFER_BIT);
-
 		// Compute camera frustum slice boundary points in world space
 		VECTOR frustumPoints[8];
 		getFrustumPoints(f[i], position, viewDir, up, frustumPoints);
 		calculateCropMatrix(f[i], frustumPoints, lightView, shadowCPM + i);
-		glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, shadowCPM[i]));
 
-		// Draw the model
-		for (int j = 0; j < MAX_ENTITIES; ++j) {
-			if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
-				drawModelGeometry(manager->models[j].model, renderer->depthProgramPosition);
-			}
-		}
+		// Bind and clear current cascade
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->shadowMaps[i], 0);
+		glClear(GL_DEPTH_BUFFER_BIT);
+		drawEntitiesDepth(renderer, shadowCPM[i]);
 	}
 	// glCullFace(GL_BACK);
 	glViewport(0, 0, renderer->width, renderer->height);
@@ -690,10 +710,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	// Depth pass
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->depthTexture, 0);
 	glClear(GL_DEPTH_BUFFER_BIT);
-	glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, mvp));
-	for (int j = 0; j < MAX_ENTITIES; ++j) {
-		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) drawModelGeometry(manager->models[j].model, renderer->depthProgramPosition);
-	}
+	drawEntitiesDepth(renderer, mvp);
 	glDisableVertexAttribArray(renderer->depthProgramPosition);
 
 	// Main pass: render scene as normal with shadow mapping (using depth map)
@@ -718,7 +735,6 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glDepthFunc(GL_EQUAL);
 	glDepthMask(GL_FALSE);
 	glUseProgram(renderer->program);
-	glUniformMatrix4fv(renderer->mvpUniform, 1, GL_FALSE, MatrixGet(mv, mvp));
 	float cascadeEndClipSpace[3];
 	GLfloat shadowCPMValues[NUM_SPLITS * 16];
 	GLint depthTextures[NUM_SPLITS];
@@ -738,16 +754,12 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glUniformMatrix4fv(glGetUniformLocation(renderer->program, "lightMVP"), NUM_SPLITS, GL_FALSE, shadowCPMValues);
 	glUniform1iv(glGetUniformLocation(renderer->program, "shadowMap"), NUM_SPLITS, depthTextures);
 	glUniform3fv(glGetUniformLocation(renderer->program, "lightDir"), 1, VectorGet(vv, lightDir));
-
 	glEnableVertexAttribArray(renderer->posAttrib);
 	glEnableVertexAttribArray(renderer->normalAttrib);
-	for (int j = 0; j < MAX_ENTITIES; ++j) {
-		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) drawModel(manager->models[j].model, renderer->posAttrib, renderer->normalAttrib);
-	}
+	drawEntities(renderer, mvp);
 	glDisableVertexAttribArray(renderer->posAttrib);
 	glDisableVertexAttribArray(renderer->normalAttrib);
 	glDepthFunc(GL_LESS);
-	glDepthMask(GL_TRUE);
 
 	glDisable(GL_DEPTH_TEST);
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->quadBuffer);
@@ -801,4 +813,6 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glVertexAttribPointer(glGetAttribLocation(renderer->motionBlurProgram, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(glGetAttribLocation(renderer->motionBlurProgram, "position"));
+
+	glDepthMask(GL_TRUE);
 }
