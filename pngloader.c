@@ -53,6 +53,8 @@ unsigned char *loadPngData(const char *filename, int *width, int *height, GLenum
 	png_uint_32 imageWidth, imageHeight;
 	int bit_depth, color_type;
 	png_get_IHDR(png_ptr, info_ptr, &imageWidth, &imageHeight, &bit_depth, &color_type, NULL, NULL, NULL);
+	if (width) *width = imageWidth;
+	if (height) *height = imageHeight;
 	// Convert transparency to full alpha
 	if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
 		png_set_tRNS_to_alpha(png_ptr);
