@@ -32,7 +32,8 @@ add_executable(fpsgame
 	state.h state.c
 	gameState.h gameState.c
 	renderer.h renderer.c
-	entity.h entity.c)
+	entity.h entity.c
+	ninePatch.h ninePatch.c)
 
 include_directories(
 	${objparser_SOURCE_DIR}/include
