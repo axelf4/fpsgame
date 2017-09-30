@@ -79,7 +79,7 @@ static void getSplitDistances(float *splitDistances, float near, float far) {
 		  ratio = far / near;
 	splitDistances[0] = near;
 	for(int i = 1; i < NUM_SPLITS; ++i) {
-		const float si = i / (float) NUM_SPLITS;
+		const float si = (float) i / NUM_SPLITS;
 		splitDistances[i] = lambda * (near * powf(ratio, si)) + (1 - lambda) * (near + (far - near) * si);
 	}
 	splitDistances[NUM_SPLITS] = far;
@@ -93,9 +93,11 @@ static void getSplitDistances(float *splitDistances, float near, float far) {
  * @param up The normalized up vector.
  * @param points Gets set to the corners of the frustum.
  */
-static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VECTOR up, VECTOR *points) {
-	// VECTOR up = VectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VECTOR *points) {
+	VECTOR up = VectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	VECTOR right = Vector4Normalize(VectorCross(viewDir, up));
+	up = Vector4Normalize(VectorCross(right, viewDir));
+
 	const VECTOR fc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.fard))),
 		  nc = VectorAdd(center, VectorMultiply(viewDir, VectorReplicate(f.neard)));
 	// Half the heights and widths of the near and far plane rectangles
@@ -123,19 +125,20 @@ static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightV
 	ALIGN(16) float vv[4];
 	float maxZ = -INFINITY, minZ = INFINITY;
 	for (int i = 0; i < 8; ++i) {
-		const VECTOR transf = VectorTransform(points[i], lightView);
+		VECTOR transf = VectorTransform(points[i], lightView);
 		VectorGet(vv, transf);
 		if (vv[2] < minZ) minZ = vv[2];
 		if (vv[2] > maxZ) maxZ = vv[2];
 	}
 
-	const MATRIX shadProj = MatrixOrtho(-1.0f, 1.0f, -1.0f, 1.0f, -maxZ, -minZ), // Set the projection matrix with the new z-bounds
-		  lightViewProjection = MatrixMultiply(shadProj, lightView);
+	// Set the projection matrix with the new z-bounds
+	MATRIX lightProjection = MatrixOrtho(-1.0f, 1.0f, -1.0f, 1.0f, -maxZ, -minZ);
+	MATRIX lightViewProjection = MatrixMultiply(lightProjection, lightView);
 
 	// Find extents of frustum slice in light's homogeneous coordinates
 	float minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
 	for (int i = 0; i < 8; ++i) {
-		const VECTOR v = VectorTransform(points[i], lightViewProjection);
+		VECTOR v = VectorTransform(points[i], lightViewProjection);
 		VectorGet(vv, v);
 		vv[0] /= vv[3];
 		vv[1] /= vv[3];
@@ -145,11 +148,11 @@ static float calculateCropMatrix(struct Frustum f, VECTOR *points, MATRIX lightV
 		if (vv[1] > maxY) maxY = vv[1];
 	}
 
-	const float scaleX = 2.0f / (maxX - minX),
+	float scaleX = 2.0f / (maxX - minX),
 		  scaleY = 2.0f / (maxY - minY),
 		  offsetX = -0.5f * (maxX + minX) * scaleX,
 		  offsetY = -0.5f * (maxY + minY) * scaleY;
-	const MATRIX cropMatrix = MatrixSet(
+	MATRIX cropMatrix = MatrixSet(
 			scaleX, 0.0f, 0.0f, 0.0f,
 			0.0f, scaleY, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
@@ -200,10 +203,10 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 		"	vNormal = vec3(model * vec4(normal, 0.0));"
 		"	gl_Position = mvp * vec4(position, 1.0);"
 		"	for (int i = 0; i < NUM_CASCADES; ++i) {"
-		"		lightSpacePos[i] = lightMVP[i] * vec4(position, 1.0);"
+		"		lightSpacePos[i] = lightMVP[i] * model * vec4(position, 1.0);"
 		"	}"
 		"}",
-		*fragmentShaderSource = "#extension GL_EXT_gpu_shader4 : enable\n"
+		*fragmentShaderSource = "#extension GL_OES_standard_derivatives : require\n"
 			"#ifdef GL_ES\n"
 			"precision highp float;\n"
 			"#endif\n"
@@ -212,11 +215,8 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"uniform vec3 lightDir;"
 			"const int NUM_CASCADES = 3;"
 			"varying vec4 lightSpacePos[NUM_CASCADES];"
-			"uniform float cascadeEndClipSpace[NUM_CASCADES];\n"
-			"#ifndef GL_EXT_gpu_shader4\n"
-			"uniform sampler2D shadowMap[NUM_CASCADES];\n"
-			"#else\n"
-			"uniform sampler2DShadow shadowMap[NUM_CASCADES];"
+			"uniform float cascadeEndClipSpace[NUM_CASCADES];"
+			"uniform sampler2D shadowMap[NUM_CASCADES];"
 			"vec2 depthGradient(vec2 uv, float z) {" // Receiver plane depth bias
 			"	vec3 duvdist_dx = dFdx(vec3(uv, z)), duvdist_dy = dFdy(vec3(uv, z));"
 			"	vec2 biasUV;" // dz_duv
@@ -224,51 +224,15 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 			"	biasUV.y = duvdist_dx.x * duvdist_dy.z - duvdist_dy.x * duvdist_dx.z;"
 			"	biasUV /= (duvdist_dx.x * duvdist_dy.y - duvdist_dx.y * duvdist_dy.x);"
 			"	return biasUV;"
-			"}\n"
-			"#endif\n"
+			"}"
 			"float calcShadowFactor() {"
-			"	vec2 poisson[25];"
-			"	poisson[0] = vec2(-0.978698, -0.0884121);"
-			"	poisson[1] = vec2(-0.841121, 0.521165);"
-			"	poisson[2] = vec2(-0.71746, -0.50322);"
-			"	poisson[3] = vec2(-0.702933, 0.903134);"
-			"	poisson[4] = vec2(-0.663198, 0.15482);"
-			"	poisson[5] = vec2(-0.495102, -0.232887);"
-			"	poisson[6] = vec2(-0.364238, -0.961791);"
-			"	poisson[7] = vec2(-0.345866, -0.564379);"
-			"	poisson[8] = vec2(-0.325663, 0.64037);"
-			"	poisson[9] = vec2(-0.182714, 0.321329);"
-			"	poisson[10] = vec2(-0.142613, -0.0227363);"
-			"	poisson[11] = vec2(-0.0564287, -0.36729);"
-			"	poisson[12] = vec2(-0.0185858, 0.918882);"
-			"	poisson[13] = vec2(0.0381787, -0.728996);"
-			"	poisson[14] = vec2(0.16599, 0.093112);"
-			"	poisson[15] = vec2(0.253639, 0.719535);"
-			"	poisson[16] = vec2(0.369549, -0.655019);"
-			"	poisson[17] = vec2(0.423627, 0.429975);"
-			"	poisson[18] = vec2(0.530747, -0.364971);"
-			"	poisson[19] = vec2(0.566027, -0.940489);"
-			"	poisson[20] = vec2(0.639332, 0.0284127);"
-			"	poisson[21] = vec2(0.652089, 0.669668);"
-			"	poisson[22] = vec2(0.773797, 0.345012);"
-			"	poisson[23] = vec2(0.968871, 0.840449);"
-			"	poisson[24] = vec2(0.991882, -0.657338);"
 			"	for (int i = 0; i < NUM_CASCADES; ++i) {"
 			"	if (gl_FragCoord.z < cascadeEndClipSpace[i]) {"
 			"		vec4 shadowCoord = lightSpacePos[i];\n" // shadowPos
-			"#ifdef GL_EXT_gpu_shader4\n"
-			"		vec2 dz_duv = depthGradient(shadowCoord.xy, shadowCoord.z);"
-			"		shadowCoord.z -= min(2.0 * dot(vec2(1.0) / 1024.0, abs(dz_duv)), 0.005);"
-			"		float sum = 0.0;"
-			"		for (int j = 0; j < 25; ++j) {"
-			"				vec2 offset = poisson[j] / 1024.0;"
-			"				float shadowDepth = shadowCoord.z + dot(dz_duv, offset);"
-			"				sum += shadow2D(shadowMap[i], vec3(shadowCoord.xy + offset, shadowDepth)).x;"
-			"		}"
-			"		return sum / 25.0;\n"
-			"#else\n"
-			"		return texture2D(shadowMap[i], shadowCoord.xy).x + 0.001 < shadowCoord.z ? 0.3 : 1.0;\n" // Slight offset to prevent shadow acne
-			"#endif\n"
+			// "		vec2 dz_duv = depthGradient(shadowCoord.xy, shadowCoord.z);"
+			// "		shadowCoord.z -= min(2.0 * dot(vec2(1.0) / 1024.0, abs(dz_duv)), 0.005);"
+			// Slight offset to prevent shadow acne
+			"		return texture2D(shadowMap[i], shadowCoord.xy).x + 0.001 < shadowCoord.z ? 0.3 : 1.0;\n"
 			"	}"
 			"	}"
 			"	return 1.0;"
@@ -321,10 +285,6 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		/*#ifdef GL_EXT_gpu_shader4
-		  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-		  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-#endif*/
 	}
 	// Create the FBO
 	glGenFramebuffers(1, &renderer->depthFbo);
@@ -606,22 +566,26 @@ void rendererDestroy(struct Renderer *renderer) {
 	glDeleteTextures(1, &renderer->blurTexture);
 	glDeleteFramebuffers(1, &renderer->blurFbo);
 	glDeleteProgram(renderer->motionBlurProgram);
-	/*glDeleteTextures(1, &renderer->skyboxTexture);
-	  glDeleteProgram(renderer->skyboxProgram);*/
+	glDeleteTextures(1, &renderer->skyboxTexture);
+	glDeleteProgram(renderer->skyboxProgram);
 }
 
 static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection) {
 	ALIGN(16) float mv[16];
 	struct EntityManager *manager = renderer->manager;
+	struct Model *lastModel = 0;
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
+			struct Model *model = manager->models[j].model;
+			if (model != lastModel) {
+				glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+				glVertexAttribPointer(renderer->depthProgramPosition, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+				lastModel = model;
+			}
 			VECTOR position = manager->positions[j].position;
 			MATRIX mvp = MatrixMultiply(viewProjection, MatrixTranslationFromVector(position));
 			glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, mvp));
-			struct Model *model = manager->models[j].model;
-			glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-			glVertexAttribPointer(renderer->depthProgramPosition, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
 			for (int i = 0; i < model->numParts; ++i) {
 				struct ModelPart *part = model->parts + i;
 				glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
@@ -633,24 +597,26 @@ static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection) 
 static void drawEntities(struct Renderer *renderer, MATRIX viewProjection) {
 	ALIGN(16) float mv[16];
 	struct EntityManager *manager = renderer->manager;
+	struct Model *lastModel = 0;
+	float defaultColor[3] = { 1.0f, 1.0f, 1.0f };
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
-			VECTOR position = manager->positions[j].position;
-			MATRIX mvp = MatrixMultiply(viewProjection, MatrixTranslationFromVector(position));
-			glUniformMatrix4fv(renderer->mvpUniform, 1, GL_FALSE, MatrixGet(mv, mvp));
 			struct Model *model = manager->models[j].model;
-			glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
-			glVertexAttribPointer(renderer->posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
-			glVertexAttribPointer(renderer->normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+			if (model != lastModel) {
+				glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
+				glVertexAttribPointer(renderer->posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
+				glVertexAttribPointer(renderer->normalAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, (const GLvoid *) (sizeof(GLfloat) * 3));
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
+				lastModel = model;
+			}
+			MATRIX modelMatrix = MatrixTranslationFromVector(manager->positions[j].position);
+			MATRIX mvp = MatrixMultiply(viewProjection, modelMatrix);
+			glUniformMatrix4fv(renderer->mvpUniform, 1, GL_FALSE, MatrixGet(mv, mvp));
+			glUniformMatrix4fv(renderer->modelUniform, 1, GL_FALSE, MatrixGet(mv, modelMatrix));
 			for (int i = 0; i < model->numParts; ++i) {
 				struct ModelPart *part = model->parts + i;
 				struct Material *material = part->materialIndex >= 0 ? model->materials + part->materialIndex : 0;
-				if (material) {
-					glUniform3fv(renderer->colorUniform, 1, material->diffuse);
-				} else {
-					glUniform3f(renderer->colorUniform, 1.0f, 1.0f, 1.0f);
-				}
+				glUniform3fv(renderer->colorUniform, 1, material ? material->diffuse : defaultColor);
 				glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
 			}
 		}
@@ -674,7 +640,6 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	const MATRIX modelView = MatrixMultiply(renderer->view, renderer->model),
 		  invModelView = MatrixInverse(modelView);
 	MATRIX mvp = MatrixMultiply(renderer->projection, MatrixMultiply(renderer->view, renderer->model));
-	VECTOR up = VectorTransform(VectorSet(0.0f, 1.0f, 0.0f, 0.0f), rotationViewMatrix);
 
 	// Shadow map pass
 	glViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE);
@@ -683,7 +648,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
 	// glCullFace(GL_FRONT); // Avoid peter-panning
 	const VECTOR lightDir = Vector4Normalize(VectorSet(-1.0f, -1.0f, 1.0f, 0.0f));
-	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+	const MATRIX lightView = lookAt(VectorSet(0.0f, 0.0f, 0.0f, 1.0f), lightDir, VectorSet(1.0f, 0.0f, 0.0f, 0.0f));
 	float splitDistances[NUM_SPLITS + 1];
 	getSplitDistances(splitDistances, Z_NEAR, Z_FAR);
 	struct Frustum f[NUM_SPLITS];
@@ -696,7 +661,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 
 		// Compute camera frustum slice boundary points in world space
 		VECTOR frustumPoints[8];
-		getFrustumPoints(f[i], position, viewDir, up, frustumPoints);
+		getFrustumPoints(f[i], position, viewDir, frustumPoints);
 		calculateCropMatrix(f[i], frustumPoints, lightView, shadowCPM + i);
 
 		// Bind and clear current cascade
@@ -718,7 +683,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glClear(GL_COLOR_BUFFER_BIT); // Clear the screen
 
 	// Draw the skybox
-	glDisable(GL_DEPTH_TEST);
+	/*glDisable(GL_DEPTH_TEST);
 	glUseProgram(renderer->skyboxProgram);
 	glUniformMatrix4fv(glGetUniformLocation(renderer->skyboxProgram, "invProjection"), 1, GL_FALSE, MatrixGet(mv, MatrixInverse(renderer->projection)));
 	glUniformMatrix4fv(glGetUniformLocation(renderer->skyboxProgram, "modelView"), 1, GL_FALSE, MatrixGet(mv, modelView));
@@ -729,7 +694,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glVertexAttribPointer(renderer->skyboxPositionAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(renderer->skyboxPositionAttrib);
-	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_DEPTH_TEST);*/
 
 	// Draw the scene
 	glDepthFunc(GL_EQUAL);
@@ -807,7 +772,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
 	MATRIX viewProjectionInverse = MatrixInverse(mvp);
 	glUniformMatrix4fv(renderer->motionBlurCurrToPrevUniform, 1, GL_FALSE, MatrixGet(mv, MatrixMultiply(renderer->prevViewProjection, viewProjectionInverse)));
-	glUniform1f(renderer->motionBlurFactorUniform, 60.0f / dt);
+	glUniform1f(renderer->motionBlurFactorUniform, 50.0f / dt);
 	renderer->prevViewProjection = MatrixMultiply(renderer->projection, renderer->view);
 	glEnableVertexAttribArray(glGetAttribLocation(renderer->motionBlurProgram, "position"));
 	glVertexAttribPointer(glGetAttribLocation(renderer->motionBlurProgram, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
