@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 #include <SDL.h>
 #include <GL/glew.h>
 #include <SDL_opengl.h>
@@ -56,6 +57,7 @@ static void update() {
 int main(int argc, char *arcv[]) {
 	setvbuf(stdout, 0, _IONBF, 0);
 	setvbuf(stderr, 0, _IONBF, 0);
+	srand(time(NULL));
 	printf("Starting the engine.\n");
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		printf("SDL_Init Error: %s\n", SDL_GetError());

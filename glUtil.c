@@ -121,6 +121,10 @@ GLuint createProgramVertFrag(const GLchar *vertexShaderSource, const GLchar *fra
 			createShader(GL_FRAGMENT_SHADER, 1, fragmentShaderSource), 0);
 }
 
+float randomFloat() {
+	return (float) rand() / RAND_MAX;
+}
+
 void printVector(VECTOR v) {
 	ALIGN(16) float vv[4];
 	VectorGet(vv, v);

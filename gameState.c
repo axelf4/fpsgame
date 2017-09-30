@@ -102,13 +102,6 @@ static struct FlexParams params0 = { ALIGN_END, -1, 100, UNDEFINED, 20, 0, 20, 2
 						 params2 = {ALIGN_CENTER, 1, 100, UNDEFINED, 0, 0, 0, 50},
 						 params1 = { ALIGN_CENTER, 1, UNDEFINED, UNDEFINED, 0, 0, 0, 0 };
 
-/**
- * Returns a random float between 0 and 1.
- */
-static float randomFloat() {
-	return rand() / RAND_MAX;
-}
-
 void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch) {
 	struct State *state = (struct State *) gameState;
 	state->update = gameStateUpdate;

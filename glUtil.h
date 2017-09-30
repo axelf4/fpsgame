@@ -39,6 +39,11 @@ GLuint createProgram(int count, ...);
  */
 GLuint createProgramVertFrag(const GLchar *vertexShaderSource, const GLchar *fragmentShaderSource);
 
+/**
+ * Returns a random float between 0 and 1.
+ */
+float randomFloat();
+
 void printVector(VECTOR v);
 
 void printMatrix(MATRIX m);
