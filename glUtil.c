@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <assert.h>
 
 char *readFile(const char *filename) {
 	char *buffer = 0;
@@ -123,6 +124,12 @@ GLuint createProgramVertFrag(const GLchar *vertexShaderSource, const GLchar *fra
 
 float randomFloat() {
 	return (float) rand() / RAND_MAX;
+}
+
+float cubicBezier(float p0, float p1, float p2, float p3, float t) {
+	assert(0.0f <= t && t <= 1.0f && "Input is out of bounds.");
+	float s = 1.0f - t;
+	return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3;
 }
 
 void printVector(VECTOR v) {

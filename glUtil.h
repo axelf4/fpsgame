@@ -44,6 +44,8 @@ GLuint createProgramVertFrag(const GLchar *vertexShaderSource, const GLchar *fra
  */
 float randomFloat();
 
+float cubicBezier(float p0, float p1, float p2, float p3, float t);
+
 void printVector(VECTOR v);
 
 void printMatrix(MATRIX m);

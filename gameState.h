@@ -11,6 +11,8 @@
 
 struct PlayerData {
 	float turn;
+	int dead : 1;
+	float deadTimer;
 };
 
 typedef struct GameState {

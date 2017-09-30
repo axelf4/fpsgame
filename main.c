@@ -41,6 +41,7 @@ static void update() {
 
 	Uint64 now = SDL_GetPerformanceCounter();
 	float dt = (now - lastTime) * 1000.0f / frequency;
+	if (dt > 1000.0f) dt = 0.0f;
 	lastTime = now;
 
 	manager.state->update(manager.state, dt);

@@ -11,7 +11,10 @@ typedef unsigned int Entity;
 
 enum {
 	POSITION_COMPONENT_MASK = 0x1,
-	MODEL_COMPONENT_MASK = 0x2
+	MODEL_COMPONENT_MASK = 0x2,
+	VELOCITY_COMPONENT_MASK = 0x4,
+	COLLIDER_COMPONENT_MASK = 0x8,
+	ENEMY_COMPONENT_MASK = 0x10,
 };
 
 struct PositionComponent {
@@ -22,11 +25,17 @@ struct ModelComponent {
 	struct Model *model;
 };
 
+struct ColliderComponent {
+	float radius;
+};
+
 struct EntityManager {
 	unsigned int nextEntityIndex;
 	unsigned int entityMasks[MAX_ENTITIES];
 	struct PositionComponent positions[MAX_ENTITIES];
 	struct ModelComponent models[MAX_ENTITIES];
+	VECTOR velocities[MAX_ENTITIES];
+	struct ColliderComponent colliders[MAX_ENTITIES];
 };
 
 void entityManagerInit(struct EntityManager *manager);

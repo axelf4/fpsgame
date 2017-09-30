@@ -1,26 +1,113 @@
 #include "gameState.h"
 #include <stdio.h>
 #include <math.h>
-#include <SDL.h>
-#include "pngloader.h"
 #include <float.h>
 #include <stdint.h>
+#include <SDL.h>
 #include <GL/glew.h>
-
+#include "pngloader.h"
 #include "image.h"
 #include "label.h"
+#include "glUtil.h"
 
 #define MOUSE_SENSITIVITY 0.006f
 #define MOVEMENT_SPEED .02f
 #define TURNING_TIME 1500.0f
+#define DYING_TIME 3000.0f
+
+/**
+ * Returns whether the spheres are colliding.
+ * @param movevec The relative velocity vector.
+ */
+static int isSphereCollision(VECTOR pos0, VECTOR pos1, float radius0, float radius1, VECTOR movevec) {
+	// The vector from the center of the moving sphere to the center of the stationary
+	VECTOR c = VectorSubtract(pos1, pos0);
+	float radiiSum = radius0 + radius1;
+
+	// Early escape test
+	if (Vector3Length(movevec) < Vector3Length(c) - radiiSum) return 0;
+
+	// Normalize movevec; check for zero vector
+	VECTOR n = (VectorEqual(movevec, VectorReplicate(0.0f)) & 0x7) == 0x7 ? movevec : Vector4Normalize(movevec);
+	float d = Vector3Dot(n, c);
+	// Make sure the spheres are moving towards each other
+	if (d < 0) return 0;
+
+	float f = Vector3Dot(c, c) - d * d;
+	float radiiSumSquared = radiiSum * radiiSum;
+	if (f >= radiiSumSquared) return 0;
+
+	float t = radiiSumSquared - f;
+	if (t < 0) return 0;
+
+	float distance = d - sqrt(t);
+	float mag = Vector3Length(movevec);
+	return mag >= distance;
+}
+
+static void processEnemies(struct GameState *gameState, float dt) {
+	struct EntityManager *manager = &gameState->manager;
+	VECTOR playerPos = manager->positions[gameState->player].position;
+	const unsigned mask = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | ENEMY_COMPONENT_MASK;
+	for (int i = 0; i < MAX_ENTITIES; ++i) {
+		if ((manager->entityMasks[i] & mask) == mask) {
+			VECTOR pos = manager->positions[i].position;
+			VECTOR toward = VectorSubtract(playerPos, pos);
+			if ((VectorEqual(toward, VectorReplicate(0.0f)) & 0x7) == 0x7) {
+				manager->velocities[i] = VectorReplicate(0.0f);
+			} else {
+				manager->velocities[i] = VectorDivide(Vector4Normalize(toward), VectorReplicate(100.0f));
+			}
+		}
+	}
+}
+
+static void processVelocities(struct GameState *gameState, float dt) {
+	struct EntityManager *manager = &gameState->manager;
+	const unsigned mask = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK;
+	for (int i = 0; i < MAX_ENTITIES; ++i) {
+		if ((manager->entityMasks[i] & mask) == mask) {
+			manager->positions[i].position = VectorAdd(manager->positions[i].position,
+					VectorMultiply(VectorReplicate(dt), manager->velocities[i]));
+		}
+	}
+}
+
+static void processCollisions(struct GameState *gameState, float dt) {
+	struct EntityManager *manager = &gameState->manager;
+	const unsigned mask = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | COLLIDER_COMPONENT_MASK;
+	for (int i = 0; i < MAX_ENTITIES && i == gameState->player; ++i) {
+		if ((manager->entityMasks[i] & mask) == mask) {
+			VECTOR pos0 = manager->positions[i].position;
+			VECTOR velocity0 = manager->velocities[i];
+			float radius0 = manager->colliders[i].radius;
+
+			for (int j = i + 1; j < MAX_ENTITIES; ++j) {
+				if ((manager->entityMasks[j] & mask) == mask) {
+					VECTOR pos1 = manager->positions[j].position;
+					VECTOR velocity1 = manager->velocities[j];
+					float radius1 = manager->colliders[j].radius;
+
+					VECTOR movevec = VectorMultiply(VectorReplicate(dt), VectorSubtract(velocity0, velocity1));
+					if (isSphereCollision(pos0, pos1, radius0, radius1, movevec)) {
+						printf("hello collisions %f\n", dt);
+						gameState->playerData.dead = 1;
+					}
+				}
+			}
+		}
+	}
+}
 
 static float getTurningFactor(float turn) {
-	float x = fabs(turn) / TURNING_TIME;
-
+	float x = turn / TURNING_TIME;
 	x = sin(0.5f * M_PI * x);
-
-	if (turn < 0) x = -x;
 	return x;
+}
+
+static float calcDyingEffectFactor(float timer) {
+	float t = timer >= DYING_TIME ? 1.0f : timer / DYING_TIME;
+	return cubicBezier(0.0f, 0.07f, 0.59f, 1.0f, t);
 }
 
 static void gameStateUpdate(struct State *state, float dt) {
@@ -28,12 +115,20 @@ static void gameStateUpdate(struct State *state, float dt) {
 	struct EntityManager *manager = &gameState->manager;
 	const Uint8 *keys = SDL_GetKeyboardState(NULL);
 
+	float timeScale = 1.0f;
+	if (gameState->playerData.dead) {
+		timeScale = 0.0f;
+		gameState->playerData.deadTimer += dt;
+	}
+	dt *= timeScale;
+
 	if (gameState->noclip) {
 		int x, y;
 		Uint32 button = SDL_GetRelativeMouseState(&x, &y);
 		gameState->yaw -= x * MOUSE_SENSITIVITY;
 		gameState->pitch -= y * MOUSE_SENSITIVITY;
 	} else {
+		// Handle turning
 		if (keys[SDL_SCANCODE_A] ^ keys[SDL_SCANCODE_D]) {
 			gameState->playerData.turn += keys[SDL_SCANCODE_A] ? -dt : dt;
 		} else {
@@ -43,12 +138,9 @@ static void gameStateUpdate(struct State *state, float dt) {
 				else gameState->playerData.turn = 0;
 			}
 		}
-
 		if (gameState->playerData.turn < -TURNING_TIME) gameState->playerData.turn = -TURNING_TIME;
 		else if (gameState->playerData.turn > TURNING_TIME) gameState->playerData.turn = TURNING_TIME;
-
-		const float rotation = 0.08f * getTurningFactor(gameState->playerData.turn);
-		gameState->yaw -= rotation;
+		gameState->yaw -= 0.006f * getTurningFactor(gameState->playerData.turn) * dt;
 	}
 
 	if (gameState->yaw > M_PI) gameState->yaw -= 2 * M_PI;
@@ -56,23 +148,28 @@ static void gameStateUpdate(struct State *state, float dt) {
 	// Clamp the pitch
 	gameState->pitch = gameState->pitch < -M_PI / 2 ? -M_PI / 2 : gameState->pitch > M_PI / 2 ? M_PI / 2 : gameState->pitch;
 
-	VECTOR forward = VectorSet(-MOVEMENT_SPEED * sin(gameState->yaw) * dt, 0, -MOVEMENT_SPEED * cos(gameState->yaw) * dt, 0),
+	VECTOR forward = VectorSet(-MOVEMENT_SPEED * sin(gameState->yaw), 0, -MOVEMENT_SPEED * cos(gameState->yaw), 0),
 		   up = VectorSet(0, 1, 0, 0),
 		   right = VectorCross(forward, up);
 
 	if (gameState->noclip) {
-		VECTOR position = gameState->position;
-		if (keys[SDL_SCANCODE_W]) position = VectorAdd(position, forward);
-		if (keys[SDL_SCANCODE_A]) position = VectorSubtract(position, right);
-		if (keys[SDL_SCANCODE_S]) position = VectorSubtract(position, forward);
-		if (keys[SDL_SCANCODE_D]) position = VectorAdd(position, right);
-		if (keys[SDL_SCANCODE_SPACE]) position = VectorAdd(position, VectorSet(0, MOVEMENT_SPEED * dt, 0, 0));
-		if (keys[SDL_SCANCODE_LSHIFT]) position = VectorSubtract(position, VectorSet(0, MOVEMENT_SPEED * dt, 0, 0));
-		gameState->position = position;
+		VECTOR displacement = VectorReplicate(0.0f);
+		if (keys[SDL_SCANCODE_W]) displacement = VectorAdd(displacement, forward);
+		if (keys[SDL_SCANCODE_A]) displacement = VectorSubtract(displacement, right);
+		if (keys[SDL_SCANCODE_S]) displacement = VectorSubtract(displacement, forward);
+		if (keys[SDL_SCANCODE_D]) displacement = VectorAdd(displacement, right);
+		if (keys[SDL_SCANCODE_SPACE]) displacement = VectorAdd(displacement, VectorSet(0, MOVEMENT_SPEED, 0, 0));
+		if (keys[SDL_SCANCODE_LSHIFT]) displacement = VectorSubtract(displacement, VectorSet(0, MOVEMENT_SPEED, 0, 0));
+		gameState->position = VectorAdd(gameState->position, VectorMultiply(VectorReplicate(dt), displacement));
 	} else {
-		VECTOR *position = &manager->positions[gameState->player].position;
-		if (keys[SDL_SCANCODE_W]) *position = VectorAdd(*position, forward);
+		manager->velocities[gameState->player] = keys[SDL_SCANCODE_W] ? forward : VectorReplicate(0.0f);
 	}
+
+	processEnemies(gameState, dt);
+	if (!gameState->playerData.dead) {
+		processCollisions(gameState, dt);
+	}
+	processVelocities(gameState, dt);
 }
 
 static void gameStateDraw(struct State *state, float dt) {
@@ -80,10 +177,23 @@ static void gameStateDraw(struct State *state, float dt) {
 	struct SpriteBatch *batch = gameState->batch;
 	struct EntityManager *manager = &gameState->manager;
 
-	VECTOR position = gameState->noclip ? gameState->position : VectorAdd(manager->positions[gameState->player].position, VectorSet(0.0f, 1.4f, 0.0f, 0.0f));
-	const float roll = M_PI / 8 * getTurningFactor(gameState->playerData.turn);
-
-	rendererDraw(&gameState->renderer, position, gameState->yaw, gameState->pitch, roll, dt);
+	if (gameState->noclip) {
+		rendererDraw(&gameState->renderer, gameState->position, gameState->yaw, gameState->pitch, 0.0f, dt);
+	} else {
+		VECTOR position = VectorAdd(manager->positions[gameState->player].position, VectorSet(0.0f, 1.4f, 0.0f, 0.0f));
+		float yaw = gameState->yaw;
+		float pitch = 0;
+		float roll = M_PI / 9 * getTurningFactor(gameState->playerData.turn);
+		if (gameState->playerData.dead) {
+			float deadFactor = calcDyingEffectFactor(gameState->playerData.deadTimer);
+			if (gameState->playerData.deadTimer > DYING_TIME / 2) yaw += 0.0002f * (gameState->playerData.deadTimer - DYING_TIME / 2);
+			pitch = -M_PI / 7.0f * deadFactor;
+			roll = (1.0f - deadFactor) * roll;
+			position = VectorAdd(position, VectorSet(0.0f, deadFactor * 6.0f, 0.0f, 0.0f));
+			position = VectorAdd(position, VectorMultiply(VectorReplicate(10.0f * deadFactor), VectorSet(cos(pitch) * sin(yaw), 0.0f, cos(pitch) * cos(yaw), 0.0f)));
+		}
+		rendererDraw(&gameState->renderer, position, yaw, pitch, roll, dt);
+	}
 
 	// Draw GUI
 	spriteBatchBegin(batch);
@@ -126,18 +236,25 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	}
 
 	gameState->player = entityManagerSpawn(manager);
-	manager->entityMasks[gameState->player] = POSITION_COMPONENT_MASK;
-	manager->positions[gameState->player].position = VectorSet(0, 0, 0, 1);
+	manager->entityMasks[gameState->player] = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | COLLIDER_COMPONENT_MASK;
+	manager->positions[gameState->player].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+	manager->velocities[gameState->player] = VectorReplicate(0.0f);
+	manager->colliders[gameState->player].radius = 0.2f;
 
 	Entity ground = entityManagerSpawn(manager);
 	manager->entityMasks[ground] = POSITION_COMPONENT_MASK | MODEL_COMPONENT_MASK;
 	manager->positions[ground].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
 	manager->models[ground].model = gameState->groundModel;
 
-	Entity enemy = entityManagerSpawn(manager);
-	manager->entityMasks[enemy] = POSITION_COMPONENT_MASK | MODEL_COMPONENT_MASK;
-	manager->positions[enemy].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
-	manager->models[enemy].model = gameState->objModel;
+	const float range = 400.0f;
+	for (int i = 0; i < 35; ++i) {
+		Entity enemy = entityManagerSpawn(manager);
+		manager->entityMasks[enemy] = POSITION_COMPONENT_MASK | MODEL_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | COLLIDER_COMPONENT_MASK | ENEMY_COMPONENT_MASK;
+		manager->positions[enemy].position = VectorSet(range * randomFloat() - range / 2, 0.0f, range * randomFloat() - range / 2, 1.0f);
+		manager->models[enemy].model = gameState->objModel;
+		manager->velocities[enemy] = VectorReplicate(0.0f);
+		manager->colliders[enemy].radius = 0.5f;
+	}
 
 	// Initialize GUI
 	gameState->flexLayout = malloc(sizeof(struct FlexLayout));
@@ -170,6 +287,8 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->noclip = 0;
 
 	gameState->playerData.turn = 0.0f;
+	gameState->playerData.dead = 0;
+	gameState->playerData.deadTimer = 0.0f;
 }
 
 void gameStateDestroy(struct GameState *gameState) {
