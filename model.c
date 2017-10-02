@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <math.h>
 #include <objparser.h>
 #include "glUtil.h"
 
@@ -192,8 +193,8 @@ struct Model *loadModelFromObj(char *path) {
 			vertices[vertexCount++] = obj.vertices[vertexIndex + 1];
 			vertices[vertexCount++] = obj.vertices[vertexIndex + 2];
 			if (vi.texcoordIndex != -1) {
-				vertices[vertexCount++] = obj.vertices[texcoordIndex];
-				vertices[vertexCount++] = obj.vertices[texcoordIndex + 1];
+				vertices[vertexCount++] = obj.texcoords[texcoordIndex];
+				vertices[vertexCount++] = obj.texcoords[texcoordIndex + 1];
 			}
 			if (vi.normalIndex != -1) {
 				vertices[vertexCount++] = obj.normals[normalIndex];
@@ -247,6 +248,16 @@ existingVertex:;
 		material->diffuse[1] = mtl->diffuse[1];
 		material->diffuse[2] = mtl->diffuse[2];
 	}
+
+	// Estimate the radius
+	float xMax = -INFINITY, yMax = -INFINITY, zMax = -INFINITY;
+	for (int i = 0; i < obj.verticesSize; i += 3) {
+		float x = fabs(obj.vertices[3 * i]), y = fabs(obj.vertices[3 * i + 1]), z = fabs(obj.vertices[3 * i + 2]);
+		if (x > xMax) xMax = x;
+		if (y > yMax) yMax = y;
+		if (z > zMax) zMax = z;
+	}
+	model->radius = sqrt(xMax * xMax + yMax * yMax + zMax * zMax);
 
 	return model;
 }

@@ -19,6 +19,7 @@ typedef struct Model {
 	int numParts;
 	struct ModelPart *parts;
 	struct Material *materials;
+	float radius;
 } Model;
 
 struct Model *loadModelFromObj(char *path);
