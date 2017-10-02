@@ -23,9 +23,9 @@ struct Renderer {
 	GLint depthProgramPosition, depthProgramMvp;
 
 	GLuint quadBuffer,
-		   ssaoProgram, ssaoTexture, ssaoFbo,
-		   blur1Program, blur2Program, blurTexture, blurFbo,
-		   motionBlurProgram, motionBlurCurrToPrevUniform, motionBlurFactorUniform;
+		   ssaoProgram, ssaoPosition, ssaoTexture, ssaoFbo,
+		   blur1Program, blur1Position, blur2Program, blur2Position, blurTexture, blurFbo,
+		   motionBlurProgram, motionBlurPosition, motionBlurCurrToPrevUniform, motionBlurFactorUniform;
 
 	GLuint skyboxTexture, skyboxProgram;
 	GLint skyboxPositionAttrib;

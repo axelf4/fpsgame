@@ -278,6 +278,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glGenTextures(NUM_SPLITS, renderer->shadowMaps);
+	GLint depthTextures[NUM_SPLITS];
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		glBindTexture(GL_TEXTURE_2D, renderer->shadowMaps[i]);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, DEPTH_SIZE, DEPTH_SIZE, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
@@ -285,7 +286,9 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		depthTextures[i] = i;
 	}
+	glUniform1iv(glGetUniformLocation(renderer->program, "shadowMap"), NUM_SPLITS, depthTextures);
 	// Create the FBO
 	glGenFramebuffers(1, &renderer->depthFbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->depthFbo);
@@ -399,6 +402,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "radius"), radius);
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "bias"), 0.012f);
 	glUniform1f(glGetUniformLocation(renderer->ssaoProgram, "intensityDivR6"), 1.0f / pow(radius, 6.0f));
+	renderer->ssaoPosition = glGetAttribLocation(renderer->ssaoProgram, "position");
 	// Clipping plane constants for use by reconstructZ
 	const float clipInfo[] = {Z_NEAR * Z_FAR, Z_NEAR - Z_FAR, Z_FAR};
 	glUniform3fv(glGetUniformLocation(renderer->ssaoProgram, "clipInfo"), 1, clipInfo);
@@ -471,10 +475,12 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	glUseProgram(renderer->blur1Program);
 	const float sharpness = 40.0f;
 	glUniform1f(glGetUniformLocation(renderer->blur1Program, "sharpness"), sharpness);
+	renderer->blur1Position = glGetAttribLocation(renderer->blur1Program, "position");
 	renderer->blur2Program = createProgram(2, fullscreenVertexShader, DONT_DELETE_SHADER,
 			createShader(GL_FRAGMENT_SHADER, 1, blurFragmentShaderSource), 0);
 	glUseProgram(renderer->blur2Program);
 	glUniform1f(glGetUniformLocation(renderer->blur2Program, "sharpness"), sharpness);
+	renderer->blur2Position = glGetAttribLocation(renderer->blur2Program, "position");
 
 	glGenTextures(1, &renderer->blurTexture);
 	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
@@ -512,6 +518,7 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	renderer->motionBlurProgram = createProgram(2, fullscreenVertexShader, 0,
 			createShader(GL_FRAGMENT_SHADER, 1, motionBlurFragmentShaderSource), 0);
 	glUseProgram(renderer->motionBlurProgram);
+	renderer->motionBlurPosition = glGetAttribLocation(renderer->motionBlurProgram, "position");
 	glUniform1i(glGetUniformLocation(renderer->motionBlurProgram, "depthTexture"), 1);
 	renderer->motionBlurCurrToPrevUniform = glGetUniformLocation(renderer->motionBlurProgram, "currentToPreviousMatrix");
 	renderer->motionBlurFactorUniform = glGetUniformLocation(renderer->motionBlurProgram, "factor");
@@ -700,9 +707,8 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glDepthFunc(GL_EQUAL);
 	glDepthMask(GL_FALSE);
 	glUseProgram(renderer->program);
-	float cascadeEndClipSpace[3];
+	float cascadeEndClipSpace[NUM_SPLITS];
 	GLfloat shadowCPMValues[NUM_SPLITS * 16];
-	GLint depthTextures[NUM_SPLITS];
 	MatrixGet(mv, renderer->projection);
 	for (int i = 0; i < NUM_SPLITS; ++i) {
 		// Compute split far distance in camera homogeneous coordinates and normalize to [0, 1]
@@ -713,11 +719,9 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 
 		glActiveTexture(GL_TEXTURE0 + i);
 		glBindTexture(GL_TEXTURE_2D, renderer->shadowMaps[i]);
-		depthTextures[i] = i;
 	}
 	glUniform1fv(glGetUniformLocation(renderer->program, "cascadeEndClipSpace"), NUM_SPLITS, cascadeEndClipSpace);
 	glUniformMatrix4fv(glGetUniformLocation(renderer->program, "lightMVP"), NUM_SPLITS, GL_FALSE, shadowCPMValues);
-	glUniform1iv(glGetUniformLocation(renderer->program, "shadowMap"), NUM_SPLITS, depthTextures);
 	glUniform3fv(glGetUniformLocation(renderer->program, "lightDir"), 1, VectorGet(vv, lightDir));
 	glEnableVertexAttribArray(renderer->posAttrib);
 	glEnableVertexAttribArray(renderer->normalAttrib);
@@ -735,20 +739,20 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glUseProgram(renderer->ssaoProgram);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
-	glEnableVertexAttribArray(glGetAttribLocation(renderer->ssaoProgram, "position"));
-	glVertexAttribPointer(glGetAttribLocation(renderer->ssaoProgram, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(renderer->ssaoPosition);
+	glVertexAttribPointer(renderer->ssaoPosition, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glDisableVertexAttribArray(glGetAttribLocation(renderer->ssaoProgram, "position"));
+	glDisableVertexAttribArray(renderer->ssaoPosition);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->blurFbo);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glUseProgram(renderer->blur1Program);
 	glBindTexture(GL_TEXTURE_2D, renderer->ssaoTexture);
-	glEnableVertexAttribArray(glGetAttribLocation(renderer->blur1Program, "position"));
-	glVertexAttribPointer(glGetAttribLocation(renderer->blur1Program, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(renderer->blur1Position);
+	glVertexAttribPointer(renderer->blur1Position, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glUniform2f(glGetUniformLocation(renderer->blur1Program, "invResolutionDirection"), 1.0f / renderer->width, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glDisableVertexAttribArray(glGetAttribLocation(renderer->blur1Program, "position"));
+	glDisableVertexAttribArray(renderer->blur1Position);
 
 	glUseProgram(renderer->blur2Program);
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->sceneFbo);
@@ -756,10 +760,10 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glBlendFunc(GL_ZERO, GL_SRC_COLOR);
 	glBindTexture(GL_TEXTURE_2D, renderer->blurTexture);
 	glUniform2f(glGetUniformLocation(renderer->blur2Program, "invResolutionDirection"), 0, 1.0f / renderer->height);
-	glEnableVertexAttribArray(glGetAttribLocation(renderer->blur2Program, "position"));
-	glVertexAttribPointer(glGetAttribLocation(renderer->blur2Program, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(renderer->blur2Position);
+	glVertexAttribPointer(renderer->blur2Position, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glDisableVertexAttribArray(glGetAttribLocation(renderer->blur2Program, "position"));
+	glDisableVertexAttribArray(renderer->blur2Position);
 	glDisable(GL_BLEND);
 
 	// Draw motion blur
@@ -774,10 +778,10 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glUniformMatrix4fv(renderer->motionBlurCurrToPrevUniform, 1, GL_FALSE, MatrixGet(mv, MatrixMultiply(renderer->prevViewProjection, viewProjectionInverse)));
 	glUniform1f(renderer->motionBlurFactorUniform, 50.0f / dt);
 	renderer->prevViewProjection = MatrixMultiply(renderer->projection, renderer->view);
-	glEnableVertexAttribArray(glGetAttribLocation(renderer->motionBlurProgram, "position"));
-	glVertexAttribPointer(glGetAttribLocation(renderer->motionBlurProgram, "position"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(renderer->motionBlurPosition);
+	glVertexAttribPointer(renderer->motionBlurPosition, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glDisableVertexAttribArray(glGetAttribLocation(renderer->motionBlurProgram, "position"));
+	glDisableVertexAttribArray(renderer->motionBlurPosition);
 
 	glDepthMask(GL_TRUE);
 }
