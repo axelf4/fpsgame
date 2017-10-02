@@ -106,15 +106,61 @@ static void getFrustumPoints(struct Frustum f, VECTOR center, VECTOR viewDir, VE
 		  farHeight = tan(0.5f * f.fov) * f.fard,
 		  farWidth = farHeight * f.ratio;
 
-	points[0] = VectorSubtract(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
-	points[1] = VectorSubtract(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
-	points[2] = VectorAdd(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
-	points[3] = VectorAdd(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[0] = VectorSubtract(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[1] = VectorAdd(VectorAdd(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[2] = VectorAdd(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
+	points[3] = VectorSubtract(VectorSubtract(nc, VectorMultiply(up, VectorReplicate(nearHeight))), VectorMultiply(right, VectorReplicate(nearWidth)));
 
-	points[4] = VectorSubtract(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
-	points[5] = VectorSubtract(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
-	points[6] = VectorAdd(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
-	points[7] = VectorAdd(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[4] = VectorSubtract(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[5] = VectorAdd(VectorAdd(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[6] = VectorAdd(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+	points[7] = VectorSubtract(VectorSubtract(fc, VectorMultiply(up, VectorReplicate(farHeight))), VectorMultiply(right, VectorReplicate(farWidth)));
+}
+
+struct Plane {
+	VECTOR normal;
+	/** The distance to the origin. */
+	float distance;
+};
+
+/**
+ * Computes the planes of the frustum.
+ * @param points The eight corners of the frustum.
+ * @param planes The six planes of the frustum.
+ */
+static void getFrustumPlanes(VECTOR *points, struct Plane *planes) {
+	VECTOR nearTop = VectorSubtract(points[1], points[0]), nearLeft = VectorSubtract(points[3], points[0]),
+		   topLeft = VectorSubtract(points[4], points[0]), bottomRight = VectorSubtract(points[2], points[6]),
+		   farRight = VectorSubtract(points[5], points[6]), farBottom = VectorSubtract(points[7], points[6]);
+
+	VECTOR normals[] = {
+		Vector4Normalize(VectorCross(nearTop, nearLeft)), // Near clip plane
+		Vector4Normalize(VectorCross(nearLeft, topLeft)), // Left
+		Vector4Normalize(VectorCross(topLeft, nearTop)), // Top
+		Vector4Normalize(VectorCross(farBottom, bottomRight)), // Bottom
+		Vector4Normalize(VectorCross(bottomRight, farRight)), // Right
+		Vector4Normalize(VectorCross(farRight, farBottom)) // Far clip plane
+	};
+
+	for (int i = 0; i < 6; ++i) {
+		struct Plane *plane = planes + i;
+		plane->normal = normals[i];
+		plane->distance = -Vector3Dot(normals[i], points[i < 3 ? 0 : 6]);
+	}
+}
+
+/**
+ * Returns whether a sphere is inside a frustum.
+ * @param planes The planes of the frustum.
+ * @param center The center of the sphere.
+ * @param radius The radius of the sphere.
+ */
+static int isSphereInFrustum(struct Plane *planes, VECTOR center, float radius) {
+	for (int i = 0; i < 6; ++i) {
+		float distance = Vector3Dot(planes[i].normal, center) + planes[i].distance;
+		if (distance < -radius) return 0;
+	}
+	return 1;
 }
 
 /**
@@ -577,20 +623,23 @@ void rendererDestroy(struct Renderer *renderer) {
 	glDeleteProgram(renderer->skyboxProgram);
 }
 
-static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection) {
+static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection, struct Plane *frustumPlanes) {
 	ALIGN(16) float mv[16];
 	struct EntityManager *manager = renderer->manager;
 	struct Model *lastModel = 0;
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
 			struct Model *model = manager->models[j].model;
+			VECTOR position = manager->positions[j].position;
+
+			if (!isSphereInFrustum(frustumPlanes, position, model->radius)) continue;
+
 			if (model != lastModel) {
 				glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
 				glVertexAttribPointer(renderer->depthProgramPosition, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
 				lastModel = model;
 			}
-			VECTOR position = manager->positions[j].position;
 			MATRIX mvp = MatrixMultiply(viewProjection, MatrixTranslationFromVector(position));
 			glUniformMatrix4fv(renderer->depthProgramMvp, 1, GL_FALSE, MatrixGet(mv, mvp));
 			for (int i = 0; i < model->numParts; ++i) {
@@ -601,7 +650,7 @@ static void drawEntitiesDepth(struct Renderer *renderer, MATRIX viewProjection) 
 	}
 }
 
-static void drawEntities(struct Renderer *renderer, MATRIX viewProjection) {
+static void drawEntities(struct Renderer *renderer, MATRIX viewProjection, struct Plane *frustumPlanes) {
 	ALIGN(16) float mv[16];
 	struct EntityManager *manager = renderer->manager;
 	struct Model *lastModel = 0;
@@ -609,6 +658,10 @@ static void drawEntities(struct Renderer *renderer, MATRIX viewProjection) {
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
 			struct Model *model = manager->models[j].model;
+			VECTOR position = manager->positions[j].position;
+
+			if (!isSphereInFrustum(frustumPlanes, position, model->radius)) continue;
+
 			if (model != lastModel) {
 				glBindBuffer(GL_ARRAY_BUFFER, model->vertexBuffer);
 				glVertexAttribPointer(renderer->posAttrib, 3, GL_FLOAT, GL_FALSE, model->stride, 0);
@@ -616,7 +669,7 @@ static void drawEntities(struct Renderer *renderer, MATRIX viewProjection) {
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->indexBuffer);
 				lastModel = model;
 			}
-			MATRIX modelMatrix = MatrixTranslationFromVector(manager->positions[j].position);
+			MATRIX modelMatrix = MatrixTranslationFromVector(position);
 			MATRIX mvp = MatrixMultiply(viewProjection, modelMatrix);
 			glUniformMatrix4fv(renderer->mvpUniform, 1, GL_FALSE, MatrixGet(mv, mvp));
 			glUniformMatrix4fv(renderer->modelUniform, 1, GL_FALSE, MatrixGet(mv, modelMatrix));
@@ -647,6 +700,11 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	const MATRIX modelView = MatrixMultiply(renderer->view, renderer->model),
 		  invModelView = MatrixInverse(modelView);
 	MATRIX mvp = MatrixMultiply(renderer->projection, MatrixMultiply(renderer->view, renderer->model));
+	struct Frustum frustum = { Z_NEAR, Z_FAR, DEGREES_TO_RADIANS(FOV), (float) renderer->width / renderer->height };
+	VECTOR points[8];
+	getFrustumPoints(frustum, position, viewDir, points);
+	struct Plane planes[6];
+	getFrustumPlanes(points, planes);
 
 	// Shadow map pass
 	glViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE);
@@ -671,10 +729,13 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 		getFrustumPoints(f[i], position, viewDir, frustumPoints);
 		calculateCropMatrix(f[i], frustumPoints, lightView, shadowCPM + i);
 
+		struct Plane frustumPlanes[6];
+		getFrustumPlanes(frustumPoints, frustumPlanes);
+
 		// Bind and clear current cascade
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->shadowMaps[i], 0);
 		glClear(GL_DEPTH_BUFFER_BIT);
-		drawEntitiesDepth(renderer, shadowCPM[i]);
+		drawEntitiesDepth(renderer, shadowCPM[i], frustumPlanes);
 	}
 	// glCullFace(GL_BACK);
 	glViewport(0, 0, renderer->width, renderer->height);
@@ -682,7 +743,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	// Depth pass
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, renderer->depthTexture, 0);
 	glClear(GL_DEPTH_BUFFER_BIT);
-	drawEntitiesDepth(renderer, mvp);
+	drawEntitiesDepth(renderer, mvp, planes);
 	glDisableVertexAttribArray(renderer->depthProgramPosition);
 
 	// Main pass: render scene as normal with shadow mapping (using depth map)
@@ -725,7 +786,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glUniform3fv(glGetUniformLocation(renderer->program, "lightDir"), 1, VectorGet(vv, lightDir));
 	glEnableVertexAttribArray(renderer->posAttrib);
 	glEnableVertexAttribArray(renderer->normalAttrib);
-	drawEntities(renderer, mvp);
+	drawEntities(renderer, mvp, planes); // Draw each entity
 	glDisableVertexAttribArray(renderer->posAttrib);
 	glDisableVertexAttribArray(renderer->normalAttrib);
 	glDepthFunc(GL_LESS);
