@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "glUtil.h"
-#include "ddsloader.h"
+#include "pngloader.h"
 
 #define DEGREES_TO_RADIANS(a) ((a) * M_PI / 180)
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -570,15 +570,13 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	renderer->motionBlurFactorUniform = glGetUniformLocation(renderer->motionBlurProgram, "factor");
 
 	// Skybox
-	char *skyboxData = readFile("assets/skybox.dds");
-	renderer->skyboxTexture = dds_load_texture_from_memory(skyboxData, 0, 0, 0);
-	free(skyboxData);
+	const char *cubemapFiles[6] = {
+		"assets/xpos.png", "assets/xneg.png", "assets/ypos.png", "assets/yneg.png", "assets/zpos.png", "assets/zneg.png"
+	};
+	renderer->skyboxTexture = loadCubemapFromPng(cubemapFiles);
 	if (!renderer->skyboxTexture) {
 		printf("Failed to load skybox texture.\n");
 	}
-	glBindTexture(GL_TEXTURE_CUBE_MAP, renderer->skyboxTexture);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	const GLchar *skyboxVertexShaderSource = "attribute vec2 position;"
 		"uniform mat4 invProjection;"
 		"uniform mat4 modelView;"
@@ -751,7 +749,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glClear(GL_COLOR_BUFFER_BIT); // Clear the screen
 
 	// Draw the skybox
-	/*glDisable(GL_DEPTH_TEST);
+	glDisable(GL_DEPTH_TEST);
 	glUseProgram(renderer->skyboxProgram);
 	glUniformMatrix4fv(glGetUniformLocation(renderer->skyboxProgram, "invProjection"), 1, GL_FALSE, MatrixGet(mv, MatrixInverse(renderer->projection)));
 	glUniformMatrix4fv(glGetUniformLocation(renderer->skyboxProgram, "modelView"), 1, GL_FALSE, MatrixGet(mv, modelView));
@@ -762,7 +760,7 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	glVertexAttribPointer(renderer->skyboxPositionAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(renderer->skyboxPositionAttrib);
-	glEnable(GL_DEPTH_TEST);*/
+	glEnable(GL_DEPTH_TEST);
 
 	// Draw the scene
 	glDepthFunc(GL_EQUAL);

@@ -13,4 +13,11 @@ GLuint loadPngTextureFromData(unsigned char *data, int width, int height, GLenum
 
 GLuint loadPngTexture(const char *filename, int *width, int *height);
 
+/**
+ * Loads an OpenGL cubemap texture from PNG files containing the 6 faces.
+ * @param files The filenames of the six cubemap faces.
+ * @return Returns the texture id or \c 0 in case of an error.
+ */
+GLuint loadCubemapFromPng(const char *files[static 6]);
+
 #endif

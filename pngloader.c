@@ -142,11 +142,7 @@ GLuint loadPngTexture(const char *filename, int *width, int *height) {
 	return texture;
 }
 
-/**
- * Loads an OpenGL cubemap texture from files containing the 6 faces.
- * @return Returns the texture id or \c 0 in case of an error.
- */
-GLuint loadCubemapFromPng(char *files[static 6]) {
+GLuint loadCubemapFromPng(const char *files[static 6]) {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	if (!texture) {
@@ -154,8 +150,21 @@ GLuint loadCubemapFromPng(char *files[static 6]) {
 		return 0;
 	}
 	glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
+	static GLenum targets[6] = { GL_TEXTURE_CUBE_MAP_POSITIVE_X, GL_TEXTURE_CUBE_MAP_NEGATIVE_X, GL_TEXTURE_CUBE_MAP_POSITIVE_Y, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z };
 	for (int i = 0; i < 6; ++i) {
+		int width, height;
+		GLenum format;
+		unsigned char *data = loadPngData(files[i], &width, &height, &format);
+		if (!data) {
+			fprintf(stderr, "Failed to load PNG data.\n");
+			glDeleteTextures(1, &texture);
+			return 0;
+		}
+		glTexImage2D(targets[i], 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		free(data);
 	}
 
 	return texture;

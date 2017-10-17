@@ -28,7 +28,6 @@ add_executable(fpsgame
 	widget.h widget.c
 	label.h label.c
 	image.h image.c
-	ddsloader.h ddsloader.c
 	state.h state.c
 	gameState.h gameState.c
 	renderer.h renderer.c
