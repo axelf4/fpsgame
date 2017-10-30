@@ -35,10 +35,12 @@ struct Font *loadFont(char *filename, int width, int height) {
 	font->lineSpacing = metrics.height >> 6;
 	font->dataWidth = width;
 	font->dataHeight = height;
-	if (!(font->data = malloc(width * height))) {
+	if (!(font->data = malloc(4 * width * height))) {
 		fprintf(stderr, "Could not allocate image data.\n");
 		return 0;
 	}
+	// Fill the texture with white
+	memset(font->data, 0xFF, 4 * width * height);
 	const int numNodes = width;
 	font->nodes = malloc(sizeof(struct stbrp_node) * numNodes);
 	stbrp_init_target(&font->stbrp_context, width, height, font->nodes, numNodes);
@@ -48,11 +50,9 @@ struct Font *loadFont(char *filename, int width, int height) {
 
 	glGenTextures(1, &font->texture);
 	glBindTexture(GL_TEXTURE_2D, font->texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, font->dataWidth, font->dataHeight, 0, GL_ALPHA, GL_UNSIGNED_BYTE, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font->dataWidth, font->dataHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
 	font->library = library;
 	font->hbFont = hb_ft_font_create_referenced(font->face);
@@ -87,11 +87,11 @@ struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint) {
 			fprintf(stderr, "Rect got REKT!\n");
 			return 0;
 		}
-		unsigned char *dst = font->data + rect.x + font->dataWidth * rect.y, *src = ft_bitmap.buffer;
-		for (int i = 0; i < srcHeight; ++i) {
-			memcpy(dst, src, ft_bitmap.width);
-			dst += font->dataWidth;
-			src += ft_bitmap.pitch;
+		unsigned char *dst = font->data + 4 * (rect.x + font->dataWidth * rect.y), *src = ft_bitmap.buffer;
+		for (int i = 0; i < srcWidth; ++i) {
+			for (int j = 0; j < srcHeight; ++j) {
+				dst[4 * (i + font->dataWidth * j) + 3] = ft_bitmap.buffer[i + ft_bitmap.pitch * j];
+			}
 		}
 
 		if (font->numGlyphs >= font->glyphCapacity) {
@@ -113,7 +113,7 @@ struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint) {
 		glyph->advanceY = slot->advance.y;
 
 		glBindTexture(GL_TEXTURE_2D, font->texture);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, font->dataWidth, font->dataHeight, GL_ALPHA, GL_UNSIGNED_BYTE, font->data);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, font->dataWidth, font->dataHeight, GL_RGBA, GL_UNSIGNED_BYTE, font->data);
 	}
 
 	return glyph;
