@@ -32,17 +32,17 @@ static void ninePatchDraw(struct Widget *widget, struct SpriteBatch *batch) {
 	float t = ninePatch->t, r = ninePatch->r, b = ninePatch->b, l = ninePatch->l;
 	float sw = ninePatch->width, sh = ninePatch->height;
 
-	spriteBatchDrawCustom(batch, texture, x, y, x + l, y + t, 0, 0, l / sw, t / sh); // Top left
-	spriteBatchDrawCustom(batch, texture, x + l, y, x + width - r, y + t, l / sw, 0, (sw - r) / sw, t / sh); // Top middle
-	spriteBatchDrawCustom(batch, texture, x + width - r, y, x + width, y + t, (sw - r) / sw, 0, 1,  t / sh); // To pright
+	spriteBatchDrawCustom(batch, texture, x, y, x + l, y + t, 0, 0, l / sw, t / sh, white); // Top left
+	spriteBatchDrawCustom(batch, texture, x + l, y, x + width - r, y + t, l / sw, 0, (sw - r) / sw, t / sh, white); // Top middle
+	spriteBatchDrawCustom(batch, texture, x + width - r, y, x + width, y + t, (sw - r) / sw, 0, 1,  t / sh, white); // To pright
 
-	spriteBatchDrawCustom(batch, texture, x, y + t, x + l, y + height - b, 0,  t / sh,  l / sw,  (sh - b) / sh); // Top left
-	spriteBatchDrawCustom(batch, texture, x + l, y + t, x + width - r, y + height - b,  l / sw,  t / sh,  (sw - r) / sw,  (sh - b) / sh); // Top middle
-	spriteBatchDrawCustom(batch, texture, x + width - r, y + t, x + width, y + height - b,  (sw - r) / sw,  t / sh, 1,  (sh - b) / sh); // To pright
+	spriteBatchDrawCustom(batch, texture, x, y + t, x + l, y + height - b, 0,  t / sh,  l / sw,  (sh - b) / sh, white); // Top left
+	spriteBatchDrawCustom(batch, texture, x + l, y + t, x + width - r, y + height - b,  l / sw,  t / sh,  (sw - r) / sw,  (sh - b) / sh, white); // Top middle
+	spriteBatchDrawCustom(batch, texture, x + width - r, y + t, x + width, y + height - b,  (sw - r) / sw,  t / sh, 1,  (sh - b) / sh, white); // To pright
 
-	spriteBatchDrawCustom(batch, texture, x, y + height - b, x + l, y + height, 0, (sh - b) / sh, l / sw, 1); // Top left
-	spriteBatchDrawCustom(batch, texture, x + l, y + height - b, x + width - r, y + height, l / sw, (sh - b) / sh, (sw - r) / sw, 1); // Top middle
-	spriteBatchDrawCustom(batch, texture, x + width - r, y + height - b, x + width, y + height, (sw - r) / sw, (sh - b) / sh, 1,  1); // To pright
+	spriteBatchDrawCustom(batch, texture, x, y + height - b, x + l, y + height, 0, (sh - b) / sh, l / sw, 1, white); // Top left
+	spriteBatchDrawCustom(batch, texture, x + l, y + height - b, x + width - r, y + height, l / sw, (sh - b) / sh, (sw - r) / sw, 1, white); // Top middle
+	spriteBatchDrawCustom(batch, texture, x + width - r, y + height - b, x + width, y + height, (sw - r) / sw, (sh - b) / sh, 1,  1, white); // To pright
 
 	struct Widget *child = ninePatch->child;
 	if (child) {

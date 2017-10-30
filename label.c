@@ -33,7 +33,7 @@ static void labelLayout(struct Widget *widget, float width, MeasureMode widthMod
 
 static void labelDraw(struct Widget *widget, struct SpriteBatch *batch) {
 	struct Label *label = (struct Label *) widget;
-	Color color = {0.96, 0.82, 0.3, 1};
+	struct Color color = {0.96, 0.82, 0.3, 1};
 	spriteBatchDrawLayout(batch, label->layout, color,
 			widget->x, widget->y);
 }

@@ -7,9 +7,11 @@
 
 #include "linebreak.h"
 
-typedef struct Color {
+struct Color {
 	float r, g, b, a;
-} Color;
+};
+
+extern struct Color white;
 
 struct SpriteBatch {
 	GLuint vertexObject, indexObject;
@@ -21,10 +23,8 @@ struct SpriteBatch {
 	float *vertices;
 	GLuint program, defaultProgram;
 	MATRIX projectionMatrix;
-	GLint vertexAttrib, texCoordAttrib;
+	GLint vertexAttrib, texCoordAttrib, colorAttrib;
 	GLuint lastTexture;
-
-	GLuint textProgram;
 };
 
 void spriteBatchInitialize(struct SpriteBatch *batch, int size);
@@ -39,8 +39,8 @@ void spriteBatchSwitchProgram(struct SpriteBatch *batch, GLuint program);
 
 void spriteBatchDraw(struct SpriteBatch *batch, GLuint texture, float x, float y, float width, float height);
 
-void spriteBatchDrawCustom(struct SpriteBatch *batch, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1);
+void spriteBatchDrawCustom(struct SpriteBatch *batch, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1, struct Color color);
 
-void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, Color color, float x, float y);
+void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, struct Color color, float x, float y);
 
 #endif
