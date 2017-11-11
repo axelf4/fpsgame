@@ -32,6 +32,7 @@ add_executable(fpsgame
 	gameState.h gameState.c
 	renderer.h renderer.c
 	entity.h entity.c
+	box.h box.c
 	ninePatch.h ninePatch.c)
 
 include_directories(
