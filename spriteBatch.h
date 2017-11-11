@@ -24,7 +24,7 @@ struct SpriteBatch {
 	GLuint program, defaultProgram;
 	MATRIX projectionMatrix;
 	GLint vertexAttrib, texCoordAttrib, colorAttrib;
-	GLuint lastTexture;
+	GLuint whiteTexture, lastTexture;
 };
 
 void spriteBatchInitialize(struct SpriteBatch *batch, int size);
@@ -42,5 +42,8 @@ void spriteBatchDraw(struct SpriteBatch *batch, GLuint texture, float x, float y
 void spriteBatchDrawCustom(struct SpriteBatch *batch, GLuint texture, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1, struct Color color);
 
 void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, struct Color color, float x, float y);
+
+/** Draws a colored rectangle. */
+void spriteBatchDrawColor(struct SpriteBatch *batch, struct Color color, float x, float y, float width, float height);
 
 #endif

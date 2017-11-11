@@ -55,6 +55,13 @@ void spriteBatchInitialize(struct SpriteBatch *batch, int size) {
 			"	gl_FragColor = vColor * texture2D(texture, vTexCoord);"
 			"}";
 	batch->defaultProgram = batch->program = createProgramVertFrag(vertexShaderSource, fragmentShaderSource);
+
+	const GLubyte whiteTextureData[] = { 0xFF };
+	glGenTextures(1, &batch->whiteTexture);
+	glBindTexture(GL_TEXTURE_2D, batch->whiteTexture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, 1, 1, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, whiteTextureData);
 }
 
 static int packColor(struct Color color) {
@@ -66,6 +73,7 @@ void spriteBatchDestroy(struct SpriteBatch *batch) {
 	glDeleteBuffers(1, &batch->indexObject);
 	free(batch->vertices);
 	glDeleteProgram(batch->defaultProgram);
+	glDeleteTextures(1, &batch->whiteTexture);
 }
 
 static void spriteBatchSetupProgram(struct SpriteBatch *batch) {
@@ -196,4 +204,8 @@ void spriteBatchDrawLayout(struct SpriteBatch *batch, struct Layout *layout, str
 
 		y += font->lineSpacing;
 	}
+}
+
+void spriteBatchDrawColor(struct SpriteBatch *batch, struct Color color, float x, float y, float width, float height) {
+	spriteBatchDrawCustom(batch, batch->whiteTexture, x, y, x + width, y + height, 0.0f, 0.0f, 1.0f, 1.0f, color);
 }
