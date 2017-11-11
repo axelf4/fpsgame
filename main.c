@@ -36,6 +36,12 @@ static void update() {
 				manager.state->resize(manager.state, width, height);
 			}
 			break;
+		case SDL_MOUSEBUTTONDOWN:
+			manager.state->mouseDown(manager.state, event.button.button, event.button.x, event.button.y);
+			break;
+		case SDL_MOUSEBUTTONUP:
+			manager.state->mouseUp(manager.state, event.button.button, event.button.x, event.button.y);
+			break;
 	}
 	if (state[SDL_SCANCODE_ESCAPE]) running = 0;
 

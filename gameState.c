@@ -208,6 +208,9 @@ static void gameStateResize(struct State *state, int width, int height) {
 	widgetLayout(gameState->flexLayout, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
 }
 
+static void mouseDown(struct State *state, int button, int x, int y) {}
+static void mouseUp(struct State *state, int button, int x, int y) {}
+
 static struct FlexParams params0 = { ALIGN_END, -1, 100, UNDEFINED, 20, 0, 20, 20 },
 						 params2 = {ALIGN_CENTER, 1, 100, UNDEFINED, 0, 0, 0, 50},
 						 params1 = { ALIGN_CENTER, 1, UNDEFINED, UNDEFINED, 0, 0, 0, 0 };
@@ -217,6 +220,8 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	state->update = gameStateUpdate;
 	state->draw = gameStateDraw;
 	state->resize = gameStateResize;
+	state->mouseDown = mouseDown;
+	state->mouseUp = mouseUp;
 	gameState->batch = batch;
 	struct EntityManager *manager = &gameState->manager;
 	entityManagerInit(manager);
