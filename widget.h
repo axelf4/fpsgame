@@ -16,13 +16,13 @@ typedef struct WidgetClass {
 	void (*draw)(struct Widget *widget, struct SpriteBatch *renderer);
 } WidgetClass;
 
-typedef struct Widget {
+struct Widget {
 	struct WidgetClass *vtable;
 	float x, y, width, height;
 	unsigned flags;
 	void *layoutParams;
-	struct Widget *parent;
-} Widget;
+	struct Widget *parent, *child, *next;
+};
 
 void widgetInitialize(struct Widget *widget);
 
@@ -41,28 +41,21 @@ void widgetLayout(struct Widget *widget, float width, MeasureMode widthMode, flo
 
 void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer);
 
-typedef struct Container {
-	struct Widget widget;
-	int childCount, childCapacity;
-	struct Widget **children;
-} Container;
+void widgetAddChild(struct Widget *widget, struct Widget *child);
 
-void containerInitialize(struct Widget *widget);
-
-void containerDestroy(struct Widget *widget);
-
-void containerAddChild(struct Widget *container, struct Widget *child);
+void widgetSetChild(struct Widget *widget, struct Widget *child);
 
 /**
- * Convenience function to recursively draw all children.
+ * Convenience function to draw all children.
  */
-void containerDrawChildren(struct Widget *widget, struct SpriteBatch *batch);
+void widgetDrawChildren(struct Widget *widget, struct SpriteBatch *batch);
 
-typedef struct FlexLayout {
-	struct Container container;
+
+struct FlexLayout {
+	struct Widget widget;
 	FlexDirection direction;
 	Align justify;
-} FlexLayout;
+};
 
 void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify);
 

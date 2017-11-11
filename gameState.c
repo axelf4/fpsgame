@@ -268,12 +268,12 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->image0 = malloc(sizeof(struct Image));
 	imageInitialize(gameState->image0, gameState->cat, width, height, 0);
 	gameState->image0->layoutParams = &params0;
-	containerAddChild(gameState->flexLayout, gameState->image0);
+	widgetAddChild(gameState->flexLayout, gameState->image0);
 
 	gameState->image1 = malloc(sizeof(struct Image));
 	imageInitialize(gameState->image1, gameState->cat, width, height, 0);
 	gameState->image1->layoutParams = &params1;
-	containerAddChild(gameState->flexLayout, gameState->image1);
+	widgetAddChild(gameState->flexLayout, gameState->image1);
 
 	gameState->font = loadFont("assets/DejaVuSans.ttf", 512, 512);
 	if (!gameState->font) {
@@ -282,7 +282,7 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 
 	gameState->label = labelNew(gameState->font, "Axel ffi! and the AV. HHHHHHHH Hi! (215): tv-hund. fesflhslg");
 	gameState->label->layoutParams = &params2;
-	containerAddChild(gameState->flexLayout, gameState->label);
+	widgetAddChild(gameState->flexLayout, gameState->label);
 
 	gameState->noclip = 0;
 
@@ -296,7 +296,6 @@ void gameStateDestroy(struct GameState *gameState) {
 	destroyModel(gameState->objModel);
 
 	fontDestroy(gameState->font);
-	containerDestroy(gameState->flexLayout);
 	free(gameState->flexLayout);
 	free(gameState->image0);
 	free(gameState->image1);

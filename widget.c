@@ -10,7 +10,7 @@ void widgetInitialize(struct Widget *widget) {
 	widget->x = widget->y = widget->width = widget->height = 0;
 	widget->flags = WIDGET_FLAG_LAYOUT_REQUIRED;
 	widget->layoutParams = 0;
-	widget->parent = 0;
+	widget->next = widget->child = widget->parent = 0;
 }
 
 void widgetSetLayoutParams(struct Widget *widget, void *layoutParams) {
@@ -43,38 +43,30 @@ void widgetDraw(struct Widget *widget, struct SpriteBatch *batch) {
 	widget->vtable->draw(widget, batch);
 }
 
-void containerInitialize(struct Widget *widget) {
-	struct Container *container = (struct Container *) widget;
-	widgetInitialize(widget);
-	container->childCount = 0;
-	container->children = malloc(sizeof(struct Widget *) * (container->childCapacity = 4));
-}
-
-void containerDestroy(struct Widget *widget) {
-	struct Container *container = (struct Container *) widget;
-	free(container->children);
-}
-
-void containerAddChild(struct Widget *widget, struct Widget *child) {
-	assert(!child->parent && "The child already has a parent.");
-	struct Container *container = (struct Container *) widget;
-	if (container->childCount >= container->childCapacity) {
-		struct Widget **tmp = realloc(container->children, container->childCapacity *= 2);
-		if (!tmp) {
-			printf("Failed to resize children array.\n");
-		}
-		container->children = tmp;
+void widgetDrawChildren(struct Widget *widget, struct SpriteBatch *batch) {
+	struct Widget *child = widget->child;
+	while (child) {
+		child->x += widget->x;
+		child->y += widget->y;
+		child->vtable->draw(child, batch);
+		child->x -= widget->x;
+		child->y -= widget->y;
+		child = child->next;
 	}
-	container->children[container->childCount++] = child;
+}
+
+void widgetAddChild(struct Widget *widget, struct Widget *child) {
+	struct Widget **cp = &widget->child;
+	while (*cp) cp = &(*cp)->next;
+	*cp = child;
 	child->parent = widget;
 }
 
-void containerDrawChildren(struct Widget *widget, struct SpriteBatch *batch) {
-	struct Container *container = (struct Container *) widget;
-	for (int i = 0; i < container->childCount; ++i) {
-		struct Widget *child = container->children[i];
-		child->vtable->draw(child, batch);
-	}
+void widgetSetChild(struct Widget *widget, struct Widget *child) {
+	// TODO detach old children
+	widget->child = child;
+	child->next = 0;
+	child->parent = widget;
 }
 
 static void layoutContextWidgetSetX(const void *widget, float x) {
@@ -106,11 +98,19 @@ static void layoutContextWidgetLayout(const void *widget, float width, MeasureMo
 }
 
 static int layoutContextWidgetGetChildCount(const void *widget) {
-	return ((struct Container *) widget)->childCount;
+	int i = 0;
+	struct Widget *child = ((struct Widget *) widget)->child;
+	while (child) {
+		++i;
+		child = child->next;
+	}
+	return i;
 }
 
 static void *layoutContextWidgetGetChildAt(const void *widget, int index) {
-	return ((struct Container *) widget)->children[index];
+	struct Widget *child = ((struct Widget *) widget)->child;
+	for (; index > 0; --index) child = child->next;
+	return child;
 }
 
 static void *layoutContextWidgetGetLayoutParams(const void *widget) {
@@ -137,12 +137,12 @@ static void flexLayoutLayout(struct Widget *widget, float width, MeasureMode wid
 }
 
 static struct WidgetClass flexLayoutClass = {
-	flexLayoutLayout, containerDrawChildren
+	flexLayoutLayout, widgetDrawChildren
 };
 
 void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify) {
 	struct FlexLayout *flexLayout = (struct FlexLayout *) widget;
-	containerInitialize(widget);
+	widgetInitialize(widget);
 	widget->vtable = &flexLayoutClass;
 	flexLayout->direction = direction;
 	flexLayout->justify = justify;
