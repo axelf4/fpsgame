@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 static void labelLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
 	struct Label *label = (struct Label *) widget;
@@ -42,20 +43,20 @@ static struct WidgetClass labelClass = {
 	labelLayout, labelDraw
 };
 
-struct Widget *labelNew(struct Font *font, const char *text) {
-	struct Label *label = malloc(sizeof(struct Label));
-	widgetInitialize((struct Widget *) label);
-	label->widget.vtable = &labelClass;
+void labelInit(struct Widget *widget, struct Font *font, const char *text) {
+	assert(widget && "widget is null.");
+	struct Label *label = (struct Label *) widget;
+	widgetInitialize(widget);
+	widget->vtable = &labelClass;
 	label->font = font;
 	label->layout = malloc(sizeof(struct Layout));
 	layoutInit(label->layout, font);
 	layoutSetText(label->layout, text, -1);
-	return (struct Widget *) label;
 }
 
 void labelDestroy(struct Widget *widget) {
 	struct Label *label = (struct Label *) widget;
+	widgetDestroy(widget);
 	layoutDestroy(label->layout);
 	free(label->layout);
-	free(label);
 }

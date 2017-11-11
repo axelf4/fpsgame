@@ -13,7 +13,7 @@ typedef struct Label {
 	struct Layout *layout;
 } Label;
 
-struct Widget *labelNew(struct Font *font, const char *text);
+void labelInit(struct Widget *widget, struct Font *font, const char *text);
 
 void labelDestroy(struct Widget *label);
 

@@ -280,7 +280,8 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		printf("Could not load font.");
 	}
 
-	gameState->label = labelNew(gameState->font, "Axel ffi! and the AV. HHHHHHHH Hi! (215): tv-hund. fesflhslg");
+	gameState->label = malloc(sizeof(struct Label));
+	labelInit(gameState->label, gameState->font, "Axel ffi! and the AV. HHHHHHHH Hi! (215): tv-hund. fesflhslg");
 	gameState->label->layoutParams = &params2;
 	widgetAddChild(gameState->flexLayout, gameState->label);
 
