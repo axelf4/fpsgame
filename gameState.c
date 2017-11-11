@@ -297,6 +297,7 @@ void gameStateDestroy(struct GameState *gameState) {
 	destroyModel(gameState->objModel);
 
 	fontDestroy(gameState->font);
+	widgetDestroy(gameState->flexLayout);
 	free(gameState->flexLayout);
 	free(gameState->image0);
 	free(gameState->image1);

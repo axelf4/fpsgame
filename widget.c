@@ -11,6 +11,14 @@ void widgetInitialize(struct Widget *widget) {
 	widget->flags = WIDGET_FLAG_LAYOUT_REQUIRED;
 	widget->layoutParams = 0;
 	widget->next = widget->child = widget->parent = 0;
+
+	struct ListenerList *list = &widget->listeners;
+	list->count = 0;
+	list->listeners = 0;
+}
+
+void widgetDestroy(struct Widget *widget) {
+	free(widget->listeners.listeners);
 }
 
 void widgetSetLayoutParams(struct Widget *widget, void *layoutParams) {
@@ -67,6 +75,106 @@ void widgetSetChild(struct Widget *widget, struct Widget *child) {
 	widget->child = child;
 	child->next = 0;
 	child->parent = widget;
+}
+
+void widgetAddListener(struct Widget *widget, struct Listener listener) {
+	struct ListenerList *list = &widget->listeners;
+	list->listeners = realloc(list->listeners, sizeof listener * ++list->count);
+	list->listeners[list->count - 1] = listener;
+}
+
+static int widgetContainsPoint(struct Widget *widget, float x, float y) {
+	return x >= widget->x && y >= widget->y && x <= widget->x + widget->width && y <= widget->y + widget->height;
+}
+
+/**
+ * Returns the deepest widget that contains the point or \c 0.
+ * The coordinates are specified in the parent widget's coordinate system.
+ */
+static struct Widget *getIntersectedWidget(struct Widget *widget, float x, float y) {
+	int hit = widgetContainsPoint(widget, x, y);
+	if (!hit) return 0;
+	struct Widget *result = widget, *child = widget->child;
+	while (child) {
+		struct Widget *childHit = getIntersectedWidget(child, x - widget->x, y - widget->y);
+		if (childHit) result = childHit;
+		child = child->next;
+	}
+	return result;
+}
+
+enum EventPhase {
+	EVENT_CAPTURING,
+	EVENT_AT_TARGET,
+	EVENT_BUBBLING
+};
+
+static void notifyWidget(struct Widget *widget, struct Event *event, enum EventPhase phase) {
+	for (int i = 0; i < widget->listeners.count && !event->canceled; ++i) {
+		struct Listener *listener = widget->listeners.listeners + i;
+		if (!listener->useCapture == (phase != EVENT_CAPTURING)
+				&& strcmp(event->eventName, listener->eventName) == 0)
+			listener->callback(widget, event, listener->data);
+	}
+}
+
+void widgetDispatchEvent(struct Widget *widget, struct Event *event) {
+	int numParents = 0;
+	struct Widget *parent = widget;
+	while ((parent = parent->parent)) ++numParents;
+	struct Widget *parents[numParents];
+	parent = widget;
+	for (int i = 0; i < numParents; ++i) {
+		parents[i] = parent = parent->parent;
+	}
+
+	// Capture
+	for (int i = numParents; i-- > 0;) {
+		notifyWidget(parents[i], event, EVENT_CAPTURING);
+		if (event->canceled) return;
+	}
+
+	// Target
+	notifyWidget(widget, event, EVENT_AT_TARGET);
+	if (event->canceled) return;
+
+	// Bubble
+	if (event->bubbles)
+		for (int i = 0; i < numParents; ++i) {
+			notifyWidget(parents[i], event, EVENT_BUBBLING);
+			if (event->canceled) return;
+		}
+}
+
+void guiUpdate(struct GuiContext *context, float x, float y) {
+	struct Widget *mouseOverLast = context->mouseOver,
+				  *mouseOver = getIntersectedWidget(context->root, x, y);
+	if (mouseOverLast != mouseOver) {
+		if (mouseOverLast)
+			widgetDispatchEvent(mouseOverLast, &(struct Event) { "mouseExit", mouseOverLast, 1 });
+		if (mouseOver)
+			widgetDispatchEvent(mouseOver, &(struct Event) { "mouseEnter", mouseOver, 1 });
+		context->mouseOver = mouseOver;
+	}
+}
+
+void guiMouseDown(struct GuiContext *context, enum MouseButton button, float x, float y) {
+	struct Widget *hit = getIntersectedWidget(context->root, x, y);
+	if (hit) {
+		widgetDispatchEvent(hit, &(struct Event) { "mouseDown", hit, 1 });
+		context->mouseFoci[button] = hit;
+	}
+}
+
+void guiMouseUp(struct GuiContext *context, enum MouseButton button, float x, float y) {
+	struct Widget *mouseFoci = context->mouseFoci[button];
+	assert(mouseFoci && "Button not yet pressed.");
+	struct Widget *hit = getIntersectedWidget(context->root, x, y);
+	widgetDispatchEvent(mouseFoci, &(struct Event) { "mouseUp", mouseFoci, 1 });
+	if (mouseFoci == hit) {
+		widgetDispatchEvent(hit, &(struct Event) { "mouseClick", hit, 1 });
+	}
+	context->mouseFoci[button] = 0;
 }
 
 static void layoutContextWidgetSetX(const void *widget, float x) {
