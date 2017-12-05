@@ -18,7 +18,7 @@ static float resolveAdjustedSize(float desiredSize, float size, enum MeasureMode
 	}
 }
 
-static void imageLayout(struct Widget *widget, float widthSize, MeasureMode widthMode, float heightSize, MeasureMode heightMode) {
+static void imageLayout(struct Widget *widget, float widthSize, enum MeasureMode widthMode, float heightSize, enum MeasureMode heightMode) {
 	struct Image *image = (struct Image *) widget;
 	float width, height;
 	float w = image->regionWidth, h = image->regionHeight;

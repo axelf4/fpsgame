@@ -12,7 +12,7 @@ void colorDrawableInit(struct Drawable *drawable, struct Color color) {
 	colorDrawable->color = color;
 }
 
-static void boxLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void boxLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	struct Box *box = (struct Box *) widget;
 	assert(widget->child && "Child is null.");
 	width -= box->padLeft + box->padRight;

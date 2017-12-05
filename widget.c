@@ -43,7 +43,7 @@ void widgetValidate(struct Widget *widget, float width, float height) {
 	}
 }
 
-void widgetLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+void widgetLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	widget->vtable->layout(widget, width, widthMode, height, heightMode);
 }
 
@@ -177,35 +177,35 @@ void guiMouseUp(struct GuiContext *context, enum MouseButton button, float x, fl
 	context->mouseFoci[button] = 0;
 }
 
-static void layoutContextWidgetSetX(const void *widget, float x) {
+static void flexContextWidgetSetX(const void *widget, float x) {
 	((struct Widget *) widget)->x = x;
 }
 
-static void layoutContextWidgetSetY(const void *widget, float y) {
+static void flexContextWidgetSetY(const void *widget, float y) {
 	((struct Widget *) widget)->y = y;
 }
 
-static float layoutContextWidgetGetWidth(const void *widget) {
+static float flexContextWidgetGetWidth(const void *widget) {
 	return ((struct Widget *) widget)->width;
 }
 
-static void layoutContextWidgetSetWidth(const void *widget, float width) {
+static void flexContextWidgetSetWidth(const void *widget, float width) {
 	((struct Widget *) widget)->width = width;
 }
 
-static float layoutContextWidgetGetHeight(const void *widget) {
+static float flexContextWidgetGetHeight(const void *widget) {
 	return ((struct Widget *) widget)->height;
 }
 
-static void layoutContextWidgetSetHeight(const void *widget, float height) {
+static void flexContextWidgetSetHeight(const void *widget, float height) {
 	((struct Widget *) widget)->height = height;
 }
 
-static void layoutContextWidgetLayout(const void *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void flexContextWidgetLayout(const void *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	((struct Widget *) widget)->vtable->layout((struct Widget *) widget, width, widthMode, height, heightMode);
 }
 
-static int layoutContextWidgetGetChildCount(const void *widget) {
+static int flexContextWidgetGetChildCount(const void *widget) {
 	int i = 0;
 	struct Widget *child = ((struct Widget *) widget)->child;
 	while (child) {
@@ -215,32 +215,32 @@ static int layoutContextWidgetGetChildCount(const void *widget) {
 	return i;
 }
 
-static void *layoutContextWidgetGetChildAt(const void *widget, int index) {
+static void *flexContextWidgetGetChildAt(const void *widget, int index) {
 	struct Widget *child = ((struct Widget *) widget)->child;
 	for (; index > 0; --index) child = child->next;
 	return child;
 }
 
-static void *layoutContextWidgetGetLayoutParams(const void *widget) {
+static void *flexContextWidgetGetLayoutParams(const void *widget) {
 	return ((struct Widget *) widget)->layoutParams;
 }
 
-static const struct LayoutContext layoutContext = {
-	layoutContextWidgetSetX,
-	layoutContextWidgetSetY,
-	layoutContextWidgetGetWidth,
-	layoutContextWidgetSetWidth,
-	layoutContextWidgetGetHeight,
-	layoutContextWidgetSetHeight,
-	layoutContextWidgetLayout,
-	layoutContextWidgetGetChildCount,
-	layoutContextWidgetGetChildAt,
-	layoutContextWidgetGetLayoutParams,
+static const struct FlexContext flexContext = {
+	flexContextWidgetSetX,
+	flexContextWidgetSetY,
+	flexContextWidgetGetWidth,
+	flexContextWidgetSetWidth,
+	flexContextWidgetGetHeight,
+	flexContextWidgetSetHeight,
+	flexContextWidgetLayout,
+	flexContextWidgetGetChildCount,
+	flexContextWidgetGetChildAt,
+	flexContextWidgetGetLayoutParams,
 };
 
-static void flexLayoutLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void flexLayoutLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	struct FlexLayout *flexLayout = (struct FlexLayout *) widget;
-	layoutFlex(&layoutContext, widget, width, widthMode, height, heightMode, flexLayout->direction, flexLayout->justify);
+	layoutFlex(&flexContext, widget, width, widthMode, height, heightMode, flexLayout->direction, flexLayout->justify);
 	widgetMarkValidated(widget);
 }
 
@@ -248,7 +248,7 @@ static struct WidgetClass flexLayoutClass = {
 	flexLayoutLayout, widgetDrawChildren
 };
 
-void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify) {
+void flexLayoutInitialize(struct Widget *widget, enum FlexDirection direction, enum Align justify) {
 	struct FlexLayout *flexLayout = (struct FlexLayout *) widget;
 	widgetInitialize(widget);
 	widget->vtable = &flexLayoutClass;

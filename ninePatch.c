@@ -4,7 +4,7 @@
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-static void ninePatchLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void ninePatchLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	struct NinePatch *ninePatch = (struct NinePatch *) widget;
 	struct Widget *child = ninePatch->child;
 

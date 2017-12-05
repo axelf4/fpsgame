@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 
-static void labelLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode) {
+static void labelLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode) {
 	struct Label *label = (struct Label *) widget;
 	struct Layout *layout = label->layout;
 

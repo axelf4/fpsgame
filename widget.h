@@ -43,7 +43,7 @@ struct ListenerList {
 };
 
 struct WidgetClass {
-	void (*layout)(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode);
+	void (*layout)(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode);
 	void (*draw)(struct Widget *widget, struct SpriteBatch *renderer);
 };
 
@@ -72,7 +72,7 @@ void widgetRequestLayout(struct Widget *widget);
  */
 void widgetValidate(struct Widget *widget, float width, float height);
 
-void widgetLayout(struct Widget *widget, float width, MeasureMode widthMode, float height, MeasureMode heightMode);
+void widgetLayout(struct Widget *widget, float width, enum MeasureMode widthMode, float height, enum MeasureMode heightMode);
 
 void widgetDraw(struct Widget *widget, struct SpriteBatch *renderer);
 
@@ -119,10 +119,10 @@ void guiMouseUp(struct GuiContext *context, enum MouseButton button, float x, fl
 
 struct FlexLayout {
 	struct Widget widget;
-	FlexDirection direction;
-	Align justify;
+	enum FlexDirection direction;
+	enum Align justify;
 };
 
-void flexLayoutInitialize(struct Widget *widget, FlexDirection direction, Align justify);
+void flexLayoutInitialize(struct Widget *widget, enum FlexDirection direction, enum Align justify);
 
 #endif
