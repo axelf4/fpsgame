@@ -10,6 +10,11 @@ Entity entityManagerSpawn(struct EntityManager *manager) {
 	return manager->nextEntityIndex++;
 }
 
+void entityManagerClear(struct EntityManager *manager) {
+	memset(manager->entityMasks, 0, manager->nextEntityIndex * sizeof *manager->entityMasks);
+	manager->nextEntityIndex = 0;
+}
+
 void entityManagerKill(struct EntityManager *manager, Entity entity) {
 	// TODO
 }

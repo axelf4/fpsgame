@@ -42,6 +42,8 @@ void entityManagerInit(struct EntityManager *manager);
 
 Entity entityManagerSpawn(struct EntityManager *manager);
 
+void entityManagerClear(struct EntityManager *manager);
+
 void entityManagerKill(struct EntityManager *manager, Entity entity);
 
 #endif
