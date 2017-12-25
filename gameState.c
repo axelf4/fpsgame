@@ -15,35 +15,6 @@
 #define TURNING_TIME 1500.0f
 #define DYING_TIME 3000.0f
 
-/**
- * Returns whether the spheres are colliding.
- * @param movevec The relative velocity vector.
- */
-static int isSphereCollision(VECTOR pos0, VECTOR pos1, float radius0, float radius1, VECTOR movevec) {
-	// The vector from the center of the moving sphere to the center of the stationary
-	VECTOR c = VectorSubtract(pos1, pos0);
-	float radiiSum = radius0 + radius1;
-
-	// Early escape test
-	if (Vector3Length(movevec) < Vector3Length(c) - radiiSum) return 0;
-
-	// Normalize movevec; check for zero vector
-	VECTOR n = (VectorEqual(movevec, VectorReplicate(0.0f)) & 0x7) == 0x7 ? movevec : Vector4Normalize(movevec);
-	float d = Vector3Dot(n, c);
-	// Make sure the spheres are moving towards each other
-	if (d < 0) return 0;
-
-	float f = Vector3Dot(c, c) - d * d;
-	float radiiSumSquared = radiiSum * radiiSum;
-	if (f >= radiiSumSquared) return 0;
-
-	float t = radiiSumSquared - f;
-	if (t < 0) return 0;
-
-	float distance = d - sqrt(t);
-	float mag = Vector3Length(movevec);
-	return mag >= distance;
-}
 
 static void processEnemies(struct GameState *gameState, float dt) {
 	struct EntityManager *manager = &gameState->manager;

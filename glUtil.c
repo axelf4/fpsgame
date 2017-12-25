@@ -132,6 +132,36 @@ float cubicBezier(float p0, float p1, float p2, float p3, float t) {
 	return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3;
 }
 
+/**
+ * Returns whether the spheres are colliding.
+ * @param movevec The relative velocity vector.
+ */
+int isSphereCollision(VECTOR pos0, VECTOR pos1, float radius0, float radius1, VECTOR movevec) {
+	// The vector from the center of the moving sphere to the center of the stationary
+	VECTOR c = VectorSubtract(pos1, pos0);
+	float radiiSum = radius0 + radius1;
+
+	// Early escape test
+	if (Vector3Length(movevec) < Vector3Length(c) - radiiSum) return 0;
+
+	// Normalize movevec; check for zero vector
+	VECTOR n = (VectorEqual(movevec, VectorReplicate(0.0f)) & 0x7) == 0x7 ? movevec : Vector4Normalize(movevec);
+	float d = Vector3Dot(n, c);
+	// Make sure the spheres are moving towards each other
+	if (d < 0) return 0;
+
+	float f = Vector3Dot(c, c) - d * d;
+	float radiiSumSquared = radiiSum * radiiSum;
+	if (f >= radiiSumSquared) return 0;
+
+	float t = radiiSumSquared - f;
+	if (t < 0) return 0;
+
+	float distance = d - sqrt(t);
+	float mag = Vector3Length(movevec);
+	return mag >= distance;
+}
+
 void printVector(VECTOR v) {
 	ALIGN(16) float vv[4];
 	VectorGet(vv, v);

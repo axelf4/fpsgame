@@ -46,6 +46,8 @@ float randomFloat();
 
 float cubicBezier(float p0, float p1, float p2, float p3, float t);
 
+int isSphereCollision(VECTOR pos0, VECTOR pos1, float radius0, float radius1, VECTOR movevec);
+
 void printVector(VECTOR v);
 
 void printMatrix(MATRIX m);
