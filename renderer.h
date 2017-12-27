@@ -25,7 +25,7 @@ struct Renderer {
 	GLuint quadBuffer,
 		   ssaoProgram, ssaoPosition, ssaoTexture, ssaoFbo,
 		   blur1Program, blur1Position, blur2Program, blur2Position, blurTexture, blurFbo,
-		   motionBlurProgram, motionBlurPosition, motionBlurCurrToPrevUniform, motionBlurFactorUniform;
+		   effectProgram, effectPosition, effectCurrToPrevUniform, effectBlurFactorUniform, effectFactorUniform;
 
 	GLuint skyboxTexture, skyboxProgram;
 	GLint skyboxPositionAttrib;
@@ -38,5 +38,7 @@ void rendererResize(struct Renderer *renderer, int width, int height);
 void rendererDestroy(struct Renderer *renderer);
 
 void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float pitch, float roll, float dt);
+
+void rendererSetEffectFactor(struct Renderer *renderer, float f);
 
 #endif

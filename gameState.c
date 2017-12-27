@@ -12,7 +12,7 @@
 
 #define MOUSE_SENSITIVITY 0.006f
 #define MOVEMENT_SPEED .02f
-#define TURNING_TIME 1500.0f
+#define TURNING_TIME 1300.0f
 #define DYING_TIME 3000.0f
 
 static void onDie(struct GameState *gameState) {
@@ -57,14 +57,12 @@ static void processCollisions(struct GameState *gameState, float dt) {
 	const unsigned mask = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | COLLIDER_COMPONENT_MASK;
 	for (int i = 0; i < MAX_ENTITIES && i == gameState->player; ++i) {
 		if ((manager->entityMasks[i] & mask) == mask) {
-			VECTOR pos0 = manager->positions[i].position;
-			VECTOR velocity0 = manager->velocities[i];
+			VECTOR pos0 = manager->positions[i].position, velocity0 = manager->velocities[i];
 			float radius0 = manager->colliders[i].radius;
 
 			for (int j = i + 1; j < MAX_ENTITIES; ++j) {
 				if ((manager->entityMasks[j] & mask) == mask) {
-					VECTOR pos1 = manager->positions[j].position;
-					VECTOR velocity1 = manager->velocities[j];
+					VECTOR pos1 = manager->positions[j].position, velocity1 = manager->velocities[j];
 					float radius1 = manager->colliders[j].radius;
 
 					VECTOR movevec = VectorMultiply(VectorReplicate(dt), VectorSubtract(velocity0, velocity1));
@@ -141,7 +139,7 @@ static void gameStateUpdate(struct State *state, float dt) {
 		if (keys[SDL_SCANCODE_LSHIFT]) displacement = VectorSubtract(displacement, VectorSet(0, MOVEMENT_SPEED, 0, 0));
 		gameState->position = VectorAdd(gameState->position, VectorMultiply(VectorReplicate(dt), displacement));
 	} else {
-		manager->velocities[gameState->player] = keys[SDL_SCANCODE_W] ? forward : VectorReplicate(0.0f);
+		manager->velocities[gameState->player] = forward;
 	}
 
 	processEnemies(gameState, dt);
@@ -168,8 +166,11 @@ static void gameStateDraw(struct State *state, float dt) {
 			if (gameState->playerData.deadTimer > DYING_TIME / 2) yaw += 0.0002f * (gameState->playerData.deadTimer - DYING_TIME / 2);
 			pitch = -M_PI / 7.0f * deadFactor;
 			roll = (1.0f - deadFactor) * roll;
-			position = VectorAdd(position, VectorSet(0.0f, deadFactor * 6.0f, 0.0f, 0.0f));
-			position = VectorAdd(position, VectorMultiply(VectorReplicate(10.0f * deadFactor), VectorSet(cos(pitch) * sin(yaw), 0.0f, cos(pitch) * cos(yaw), 0.0f)));
+			float distFactor = 10.0f * deadFactor; // Distance from where we died
+			position = VectorAdd(position, VectorSet(distFactor * cos(pitch) * sin(yaw), deadFactor * 6.0f, distFactor * cos(pitch) * cos(yaw), 0.0f));
+			rendererSetEffectFactor(&gameState->renderer, deadFactor);
+		} else {
+			rendererSetEffectFactor(&gameState->renderer, 0.0f);
 		}
 		rendererDraw(&gameState->renderer, position, yaw, pitch, roll, dt);
 	}

@@ -18,7 +18,7 @@
 struct Frustum {
 	float neard;
 	float fard;
-	// In radians
+	/** The horizontal field-of-vision in radians. */
 	float fov;
 	float ratio;
 };
@@ -540,7 +540,9 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 	glBindFramebuffer(GL_FRAMEBUFFER, renderer->blurFbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderer->blurTexture, 0);
 
-	const GLchar *motionBlurFragmentShaderSource = "#define NUM_SAMPLES (24)\n"
+	const GLchar *effectFragmentShaderSource = "#define NUM_SAMPLES (24)\n"
+		"#define VIGNETTE_RADIUS 0.75\n"
+		"#define VIGNETTE_SOFTNESS 0.45\n"
 		"#ifdef GL_ES\n"
 		"precision mediump float;\n"
 		"#endif\n"
@@ -548,26 +550,35 @@ int rendererInit(struct Renderer *renderer, struct EntityManager *manager, int w
 		"uniform sampler2D texture;"
 		"uniform sampler2D depthTexture;"
 		"uniform mat4 currentToPreviousMatrix;"
-		"uniform float factor;"
+		"uniform float blurFactor;"
+		"uniform vec2 resolution;"
+		"uniform float effectFactor;"
 		"void main() {"
 		"	vec4 currentPos = vec4(2.0 * texCoord - 1.0, texture2D(depthTexture, texCoord).x, 1.0);"
 		"	vec4 previousPos = currentToPreviousMatrix * currentPos;"
 		"	previousPos /= previousPos.w;"
-		"	vec2 velocity = factor * (currentPos.xy - previousPos.xy) * 0.5;"
+		"	vec2 velocity = blurFactor * (currentPos.xy - previousPos.xy) * 0.5;"
 		"	vec4 result = texture2D(texture, texCoord);"
 		"	for (int i = 1; i < NUM_SAMPLES; ++i) {"
 		"		vec2 offset = velocity * (float(i) / float(NUM_SAMPLES - 1) - 0.5);"
 		"		result += texture2D(texture, texCoord + offset);"
 		"	}"
 		"	gl_FragColor = result / float(NUM_SAMPLES);"
+
+		"	float gray = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));"
+		"	gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * gray, effectFactor);"
+
+		"	float vignette = smoothstep(VIGNETTE_RADIUS, VIGNETTE_RADIUS - VIGNETTE_SOFTNESS, length(gl_FragCoord.xy / vec2(800.0, 600.0) - 0.5));"
+		"	gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vignette, effectFactor);"
 		"}";
-	renderer->motionBlurProgram = createProgram(2, fullscreenVertexShader, 0,
-			createShader(GL_FRAGMENT_SHADER, 1, motionBlurFragmentShaderSource), 0);
-	glUseProgram(renderer->motionBlurProgram);
-	renderer->motionBlurPosition = glGetAttribLocation(renderer->motionBlurProgram, "position");
-	glUniform1i(glGetUniformLocation(renderer->motionBlurProgram, "depthTexture"), 1);
-	renderer->motionBlurCurrToPrevUniform = glGetUniformLocation(renderer->motionBlurProgram, "currentToPreviousMatrix");
-	renderer->motionBlurFactorUniform = glGetUniformLocation(renderer->motionBlurProgram, "factor");
+	renderer->effectProgram = createProgram(2, fullscreenVertexShader, 0,
+			createShader(GL_FRAGMENT_SHADER, 1, effectFragmentShaderSource), 0);
+	glUseProgram(renderer->effectProgram);
+	renderer->effectPosition = glGetAttribLocation(renderer->effectProgram, "position");
+	glUniform1i(glGetUniformLocation(renderer->effectProgram, "depthTexture"), 1);
+	renderer->effectCurrToPrevUniform = glGetUniformLocation(renderer->effectProgram, "currentToPreviousMatrix");
+	renderer->effectBlurFactorUniform = glGetUniformLocation(renderer->effectProgram, "blurFactor");
+	renderer->effectFactorUniform = glGetUniformLocation(renderer->effectProgram, "effectFactor");
 
 	// Skybox
 	const char *cubemapFiles[6] = {
@@ -616,7 +627,7 @@ void rendererDestroy(struct Renderer *renderer) {
 	glDeleteProgram(renderer->blur2Program);
 	glDeleteTextures(1, &renderer->blurTexture);
 	glDeleteFramebuffers(1, &renderer->blurFbo);
-	glDeleteProgram(renderer->motionBlurProgram);
+	glDeleteProgram(renderer->effectProgram);
 	glDeleteTextures(1, &renderer->skyboxTexture);
 	glDeleteProgram(renderer->skyboxProgram);
 }
@@ -828,19 +839,24 @@ void rendererDraw(struct Renderer *renderer, VECTOR position, float yaw, float p
 	// Draw motion blur
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
-	glUseProgram(renderer->motionBlurProgram);
+	glUseProgram(renderer->effectProgram);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, renderer->sceneTexture);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, renderer->depthTexture);
 	MATRIX viewProjectionInverse = MatrixInverse(mvp);
-	glUniformMatrix4fv(renderer->motionBlurCurrToPrevUniform, 1, GL_FALSE, MatrixGet(mv, MatrixMultiply(renderer->prevViewProjection, viewProjectionInverse)));
-	glUniform1f(renderer->motionBlurFactorUniform, 50.0f / dt);
+	glUniformMatrix4fv(renderer->effectCurrToPrevUniform, 1, GL_FALSE, MatrixGet(mv, MatrixMultiply(renderer->prevViewProjection, viewProjectionInverse)));
+	glUniform1f(renderer->effectBlurFactorUniform, 50.0f / dt);
 	renderer->prevViewProjection = MatrixMultiply(renderer->projection, renderer->view);
-	glEnableVertexAttribArray(renderer->motionBlurPosition);
-	glVertexAttribPointer(renderer->motionBlurPosition, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(renderer->effectPosition);
+	glVertexAttribPointer(renderer->effectPosition, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glDisableVertexAttribArray(renderer->motionBlurPosition);
+	glDisableVertexAttribArray(renderer->effectPosition);
 
 	glDepthMask(GL_TRUE);
+}
+
+void rendererSetEffectFactor(struct Renderer *renderer, float f) {
+	glUseProgram(renderer->effectProgram);
+	glUniform1f(renderer->effectFactorUniform, f);
 }
