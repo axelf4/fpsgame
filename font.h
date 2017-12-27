@@ -39,7 +39,10 @@ typedef struct Font {
 	FT_Library library; // TODO break this out
 } Font;
 
-struct Font *loadFont(char *filename, int width, int height);
+/**
+ * @return On success zero is returned.
+ */
+int fontInit(struct Font *font, const char *filename, int width, int height);
 
 struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint);
 

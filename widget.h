@@ -4,9 +4,20 @@
 #include <flexLayout.h>
 #include <GL/glew.h>
 #include "spriteBatch.h"
+#include <SDL.h>
 
 enum {
-	WIDGET_FLAG_LAYOUT_REQUIRED = 0x1,
+	WIDGET_LAYOUT_REQUIRED = 0x1,
+	WIDGET_FOCUSABLE = 0x10,
+};
+
+enum Focusability {
+	/** This view will get focus only if none of its descendants want it. */
+	FOCUS_AFTER_DESCENDANTS,
+	/** This view will get focus before any of its descendants. */
+	FOCUS_BEFORE_DESCENDANTS,
+	/** This view will block any of its descendants from getting focus, even if they are focusable. */
+	FOCUS_BLOCK_DESCENDANTS
 };
 
 struct Widget;
@@ -20,6 +31,11 @@ struct Event {
 	int bubbles : 1;
 	/* Whether this event has been canceled. */
 	int canceled : 1;
+};
+
+struct KeyEvent {
+	struct Event event;
+	SDL_Scancode scancode;
 };
 
 /**
@@ -53,6 +69,7 @@ struct Widget {
 	unsigned flags;
 	void *layoutParams;
 	struct Widget *parent, *child, *next;
+	enum Focusability focusability;
 
 	struct ListenerList listeners;
 };
@@ -86,6 +103,14 @@ void widgetSetChild(struct Widget *widget, struct Widget *child);
 void widgetDrawChildren(struct Widget *widget, struct SpriteBatch *batch);
 
 /**
+ * Returns whether the widget is the same or a descendant of the specified widget.
+ * @param widget The parent widget.
+ * @param child The supposed descendant.
+ * @return True if the widget is a descendant otherwise false.
+ */
+int widgetIsDescendant(struct Widget *widget, struct Widget *child);
+
+/**
  * Adds the listener to be notified of the specified event type on the widget.
  * @param widget The target widget to get notified of events on.
  * @param listener The listener to add.
@@ -108,14 +133,23 @@ enum MouseButton {
 struct GuiContext {
 	struct Widget *root,
 				  *mouseOver,
-				  *mouseFoci[MOUSE_BTN_COUNT];
+				  *mouseFoci[MOUSE_BTN_COUNT],
+				  *focused;
 };
 
+int widgetRequestFocus(struct GuiContext *context, struct Widget *widget);
+
 void guiUpdate(struct GuiContext *context, float x, float y);
+
+void guiDraw(struct GuiContext *context, struct SpriteBatch *batch, float width, float height);
+
+void guiSetRoot(struct GuiContext *context, struct Widget *widget);
 
 void guiMouseDown(struct GuiContext *context, enum MouseButton button, float x, float y);
 
 void guiMouseUp(struct GuiContext *context, enum MouseButton button, float x, float y);
+
+void guiKeyDown(struct GuiContext *context, SDL_Scancode scancode);
 
 struct FlexLayout {
 	struct Widget widget;

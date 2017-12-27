@@ -8,6 +8,7 @@
 #include "model.h"
 #include "font.h"
 #include "widget.h"
+#include "label.h"
 
 struct PlayerData {
 	float turn;
@@ -15,9 +16,18 @@ struct PlayerData {
 	float deadTimer;
 };
 
+struct InGameUI {
+	struct Label scoreLabel;
+};
+
+struct GameOverUI {
+	struct Label label;
+};
+
 typedef struct GameState {
 	struct State state;
 	struct SpriteBatch *batch;
+	struct Font *font;
 	struct EntityManager manager;
 	struct Renderer renderer;
 
@@ -26,7 +36,11 @@ typedef struct GameState {
 	struct Model *objModel;
 	struct Model *groundModel;
 
-	struct Font *font;
+	struct GuiContext context;
+
+	struct InGameUI inGameUI;
+	struct GameOverUI gameOverUI;
+
 	struct Widget *flexLayout, *image0, *image1, *label;
 	GLuint cat;
 
@@ -36,7 +50,7 @@ typedef struct GameState {
 	Entity player;
 } GameState;
 
-void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch);
+void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch, struct Font *font);
 
 void gameStateDestroy(struct GameState *gameState);
 

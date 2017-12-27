@@ -7,6 +7,7 @@
 #include <vmath.h>
 #include "state.h"
 #include "spriteBatch.h"
+#include "font.h"
 #include "gameState.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -18,6 +19,7 @@ struct GameState gameState;
 struct SpriteBatch batch;
 Uint64 frequency, lastTime = 0;
 int running = 1;
+struct Font font;
 
 static void update() {
 	const Uint8 *state = SDL_GetKeyboardState(NULL);
@@ -41,6 +43,12 @@ static void update() {
 			break;
 		case SDL_MOUSEBUTTONUP:
 			manager.state->mouseUp(manager.state, event.button.button, event.button.x, event.button.y);
+			break;
+		case SDL_KEYDOWN:
+			manager.state->keyDown(manager.state, event.key.keysym.scancode);
+			break;
+		case SDL_KEYUP:
+			manager.state->keyUp(manager.state, event.key.keysym.scancode);
 			break;
 	}
 	if (state[SDL_SCANCODE_ESCAPE]) running = 0;
@@ -87,8 +95,11 @@ int main(int argc, char *arcv[]) {
 
 	spriteBatchInitialize(&batch, 32);
 	batch.projectionMatrix = MatrixOrtho(0, 800, 600, 0, -1, 1);
+	if (fontInit(&font, "assets/DejaVuSans.ttf", 512, 512) != 0) {
+		fprintf(stderr, "Error initializing font.");
+	}
 
-	gameStateInitialize(&gameState, &batch);
+	gameStateInitialize(&gameState, &batch, &font);
 	setState(&manager, (struct State *) &gameState);
 
 	frequency = SDL_GetPerformanceFrequency();

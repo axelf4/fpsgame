@@ -15,6 +15,14 @@
 #define TURNING_TIME 1500.0f
 #define DYING_TIME 3000.0f
 
+static void onDie(struct GameState *gameState) {
+	gameState->playerData.dead = 1;
+
+	struct GuiContext *context = &gameState->context;
+	guiSetRoot(context, (struct Widget *) &gameState->gameOverUI.label);
+	widgetRequestLayout(context->root);
+	widgetRequestFocus(context, context->root);
+}
 
 static void processEnemies(struct GameState *gameState, float dt) {
 	struct EntityManager *manager = &gameState->manager;
@@ -62,7 +70,7 @@ static void processCollisions(struct GameState *gameState, float dt) {
 					VECTOR movevec = VectorMultiply(VectorReplicate(dt), VectorSubtract(velocity0, velocity1));
 					if (isSphereCollision(pos0, pos1, radius0, radius1, movevec)) {
 						printf("hello collisions %f\n", dt);
-						gameState->playerData.dead = 1;
+						onDie(gameState);
 					}
 				}
 			}
@@ -168,49 +176,48 @@ static void gameStateDraw(struct State *state, float dt) {
 
 	// Draw GUI
 	spriteBatchBegin(batch);
-	// widgetValidate(gameState->flexLayout, 800, 600);
-	// widgetDraw(gameState->flexLayout, batch);
+	struct GuiContext *context = &gameState->context;
+	widgetValidate(context->root, 800, 600);
+	widgetDraw(context->root, batch);
 	spriteBatchEnd(batch);
 }
 
 static void gameStateResize(struct State *state, int width, int height) {
 	struct GameState *gameState = (struct GameState *) state;
 	rendererResize(&gameState->renderer, width, height);
-	widgetLayout(gameState->flexLayout, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
+	widgetLayout(gameState->context.root, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
 }
 
 static void mouseDown(struct State *state, int button, int x, int y) {}
 static void mouseUp(struct State *state, int button, int x, int y) {}
 
+static void keyDown(struct State *state, SDL_Scancode scancode) {
+	struct GameState *gameState = (struct GameState *) state;
+	struct GuiContext *context = &gameState->context;
+	guiKeyDown(context, scancode);
+}
+
+static void keyUp(struct State *state, SDL_Scancode scancode) {}
+
 static struct FlexParams params0 = { ALIGN_END, -1, 100, UNDEFINED, 20, 0, 20, 20 },
 						 params2 = {ALIGN_CENTER, 1, 100, UNDEFINED, 0, 0, 0, 50},
 						 params1 = { ALIGN_CENTER, 1, UNDEFINED, UNDEFINED, 0, 0, 0, 0 };
 
-void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch) {
-	struct State *state = (struct State *) gameState;
-	state->update = gameStateUpdate;
-	state->draw = gameStateDraw;
-	state->resize = gameStateResize;
-	state->mouseDown = mouseDown;
-	state->mouseUp = mouseUp;
-	gameState->batch = batch;
-	struct EntityManager *manager = &gameState->manager;
-	entityManagerInit(manager);
-	struct Renderer *renderer = &gameState->renderer;
-	rendererInit(renderer, manager, 800, 600);
+static void initInGameUI(struct InGameUI *ui, struct Font *font) {
+	labelInit((struct Widget *) &ui->scoreLabel, font, "Hello ben");
+}
 
-	gameState->position = VectorSet(0, 0, 0, 1);
+static void initGame(struct GameState *gameState) {
+	struct EntityManager *manager = &gameState->manager;
+
 	gameState->yaw = 0;
 	gameState->pitch = 0;
-	gameState->objModel = loadModelFromObj("assets/pyramid.obj");
-	if (!gameState->objModel) {
-		printf("Failed to load model.\n");
-	}
-	gameState->groundModel = loadModelFromObj("assets/ground.obj");
-	if (!gameState->groundModel) {
-		printf("Failed to load ground model.\n");
-	}
 
+	gameState->playerData.turn = 0.0f;
+	gameState->playerData.dead = 0;
+	gameState->playerData.deadTimer = 0.0f;
+
+	entityManagerClear(manager);
 	gameState->player = entityManagerSpawn(manager);
 	manager->entityMasks[gameState->player] = POSITION_COMPONENT_MASK | VELOCITY_COMPONENT_MASK | COLLIDER_COMPONENT_MASK;
 	manager->positions[gameState->player].position = VectorSet(0.0f, 0.0f, 0.0f, 1.0f);
@@ -232,6 +239,58 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 		manager->colliders[enemy].radius = 0.5f;
 	}
 
+	guiSetRoot(&gameState->context, (struct Widget *) &gameState->inGameUI.scoreLabel);
+}
+
+static void onGameOverKeyDown(struct Widget *widget, struct Event *event, void *data) {
+	struct KeyEvent *keyEvent = (struct KeyEvent *) event;
+	struct GameState *gameState = data;
+	if (keyEvent->scancode == SDL_SCANCODE_SPACE) {
+		printf("should start new game here\n");
+		initGame(gameState);
+	}
+}
+
+static void initGameOverUI(struct GameState *gameState, struct GameOverUI *ui, struct Font *font) {
+	struct Widget *label = (struct Widget *) &ui->label;
+	labelInit(label, font, "Game over.\nPress space to restart.");
+	label->flags |= WIDGET_FOCUSABLE;
+	widgetAddListener(label, (struct Listener) { "keyDown", onGameOverKeyDown, gameState, 0 });
+}
+
+void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch, struct Font *font) {
+	struct State *state = (struct State *) gameState;
+	struct EntityManager *manager = &gameState->manager;
+	state->update = gameStateUpdate;
+	state->draw = gameStateDraw;
+	state->resize = gameStateResize;
+	state->mouseDown = mouseDown;
+	state->mouseUp = mouseUp;
+	state->keyDown = keyDown;
+	state->keyUp = keyUp;
+	gameState->batch = batch;
+	gameState->font = font;
+	entityManagerInit(manager);
+	struct Renderer *renderer = &gameState->renderer;
+	rendererInit(renderer, manager, 800, 600);
+
+	gameState->position = VectorSet(0, 0, 0, 1);
+	gameState->objModel = loadModelFromObj("assets/pyramid.obj");
+	if (!gameState->objModel) {
+		printf("Failed to load model.\n");
+	}
+	gameState->groundModel = loadModelFromObj("assets/ground.obj");
+	if (!gameState->groundModel) {
+		printf("Failed to load ground model.\n");
+	}
+
+	initInGameUI(&gameState->inGameUI, font);
+	initGameOverUI(gameState, &gameState->gameOverUI, font);
+
+	gameState->context = (struct GuiContext) { (struct Widget *) &gameState->inGameUI.scoreLabel };
+
+	initGame(gameState);
+
 	// Initialize GUI
 	gameState->flexLayout = malloc(sizeof(struct FlexLayout));
 	flexLayoutInitialize(gameState->flexLayout, DIRECTION_ROW, ALIGN_START);
@@ -251,28 +310,18 @@ void gameStateInitialize(struct GameState *gameState, struct SpriteBatch *batch)
 	gameState->image1->layoutParams = &params1;
 	widgetAddChild(gameState->flexLayout, gameState->image1);
 
-	gameState->font = loadFont("assets/DejaVuSans.ttf", 512, 512);
-	if (!gameState->font) {
-		printf("Could not load font.");
-	}
-
 	gameState->label = malloc(sizeof(struct Label));
 	labelInit(gameState->label, gameState->font, "Axel ffi! and the AV. HHHHHHHH Hi! (215): tv-hund. fesflhslg");
 	gameState->label->layoutParams = &params2;
 	widgetAddChild(gameState->flexLayout, gameState->label);
 
 	gameState->noclip = 0;
-
-	gameState->playerData.turn = 0.0f;
-	gameState->playerData.dead = 0;
-	gameState->playerData.deadTimer = 0.0f;
 }
 
 void gameStateDestroy(struct GameState *gameState) {
 	rendererDestroy(&gameState->renderer);
 	destroyModel(gameState->objModel);
 
-	fontDestroy(gameState->font);
 	widgetDestroy(gameState->flexLayout);
 	free(gameState->flexLayout);
 	free(gameState->image0);

@@ -1,6 +1,7 @@
 #include "widget.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 
 #define MAX(a, b) ((a) < (b) ? (b) : (a))
@@ -8,9 +9,10 @@
 
 void widgetInitialize(struct Widget *widget) {
 	widget->x = widget->y = widget->width = widget->height = 0;
-	widget->flags = WIDGET_FLAG_LAYOUT_REQUIRED;
+	widget->flags = WIDGET_LAYOUT_REQUIRED;
 	widget->layoutParams = 0;
 	widget->next = widget->child = widget->parent = 0;
+	widget->focusability = FOCUS_BEFORE_DESCENDANTS;
 
 	struct ListenerList *list = &widget->listeners;
 	list->count = 0;
@@ -26,11 +28,11 @@ void widgetSetLayoutParams(struct Widget *widget, void *layoutParams) {
 }
 
 void widgetMarkValidated(struct Widget *widget) {
-	widget->flags &= ~WIDGET_FLAG_LAYOUT_REQUIRED;
+	widget->flags &= ~WIDGET_LAYOUT_REQUIRED;
 }
 
 void widgetRequestLayout(struct Widget *widget) {
-	widget->flags |= WIDGET_FLAG_LAYOUT_REQUIRED;
+	widget->flags |= WIDGET_LAYOUT_REQUIRED;
 
 	if (widget->parent) {
 		widgetRequestLayout(widget->parent);
@@ -38,7 +40,7 @@ void widgetRequestLayout(struct Widget *widget) {
 }
 
 void widgetValidate(struct Widget *widget, float width, float height) {
-	if (widget->flags & WIDGET_FLAG_LAYOUT_REQUIRED) {
+	if (widget->flags & WIDGET_LAYOUT_REQUIRED) {
 		widget->vtable->layout(widget, width, MEASURE_EXACTLY, height, MEASURE_EXACTLY);
 	}
 }
@@ -77,6 +79,11 @@ void widgetSetChild(struct Widget *widget, struct Widget *child) {
 	child->parent = widget;
 }
 
+int widgetIsDescendant(struct Widget *widget, struct Widget *child) {
+	do if (child == widget) return 1; while ((child = child->parent));
+	return 0;
+}
+
 void widgetAddListener(struct Widget *widget, struct Listener listener) {
 	struct ListenerList *list = &widget->listeners;
 	list->listeners = realloc(list->listeners, sizeof listener * ++list->count);
@@ -112,7 +119,8 @@ enum EventPhase {
 static void notifyWidget(struct Widget *widget, struct Event *event, enum EventPhase phase) {
 	for (int i = 0; i < widget->listeners.count && !event->canceled; ++i) {
 		struct Listener *listener = widget->listeners.listeners + i;
-		if (!listener->useCapture == (phase != EVENT_CAPTURING)
+		if ((listener->useCapture == (phase == EVENT_CAPTURING)
+					|| phase == EVENT_AT_TARGET)
 				&& strcmp(event->eventName, listener->eventName) == 0)
 			listener->callback(widget, event, listener->data);
 	}
@@ -146,6 +154,43 @@ void widgetDispatchEvent(struct Widget *widget, struct Event *event) {
 		}
 }
 
+static int requestFocusInDescendants(struct GuiContext *context, struct Widget *widget) {
+	struct Widget *child = widget->child;
+	while (child) {
+		if (widgetRequestFocus(context, child)) return 1;
+		child = child->next;
+	}
+	return 0;
+}
+
+int widgetRequestFocus(struct GuiContext *context, struct Widget *widget) {
+	// If an ancestor is blocking focus
+	struct Widget *parent = widget;
+	while ((parent = parent->parent))
+		if (parent->focusability == FOCUS_BLOCK_DESCENDANTS)
+			return 0;
+
+	// If the root of the isnt the same as the context
+	// TODO maybe allow root in the middle of tree?
+	if (parent != context->root)
+		return 0;
+
+	if (widget->focusability == FOCUS_AFTER_DESCENDANTS
+			&& requestFocusInDescendants(context, widget))
+		return 1;
+
+	if (widget->flags & WIDGET_FOCUSABLE) {
+		context->focused = widget;
+		return 1;
+	}
+
+	if (widget->focusability == FOCUS_BEFORE_DESCENDANTS
+			&& requestFocusInDescendants(context, widget))
+		return 1;
+
+	return 0;
+}
+
 void guiUpdate(struct GuiContext *context, float x, float y) {
 	struct Widget *mouseOverLast = context->mouseOver,
 				  *mouseOver = getIntersectedWidget(context->root, x, y);
@@ -158,11 +203,23 @@ void guiUpdate(struct GuiContext *context, float x, float y) {
 	}
 }
 
+void guiDraw(struct GuiContext *context, struct SpriteBatch *batch, float width, float height) {
+	widgetValidate(context->root, width, height);
+	widgetDraw(context->root, batch);
+}
+
+void guiSetRoot(struct GuiContext *context, struct Widget *widget) {
+	context->root = widget;
+	context->mouseOver = context->focused = 0;
+	memset(context->mouseFoci, 0, MOUSE_BTN_COUNT);
+}
+
 void guiMouseDown(struct GuiContext *context, enum MouseButton button, float x, float y) {
 	struct Widget *hit = getIntersectedWidget(context->root, x, y);
 	if (hit) {
 		widgetDispatchEvent(hit, &(struct Event) { "mouseDown", hit, 1 });
 		context->mouseFoci[button] = hit;
+		if (!widgetRequestFocus(context, hit)) context->focused = 0;
 	}
 }
 
@@ -175,6 +232,13 @@ void guiMouseUp(struct GuiContext *context, enum MouseButton button, float x, fl
 		widgetDispatchEvent(hit, &(struct Event) { "mouseClick", hit, 1 });
 	}
 	context->mouseFoci[button] = 0;
+}
+
+void guiKeyDown(struct GuiContext *context, SDL_Scancode scancode) {
+	if (context->focused) {
+		// TODO send scancode with key event
+		widgetDispatchEvent(context->focused, (struct Event *) &(struct KeyEvent) { { "keyDown", context->focused, 1}, scancode });
+	}
 }
 
 static void flexContextWidgetSetX(const void *widget, float x) {

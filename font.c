@@ -5,29 +5,25 @@
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "stb_rect_pack.h"
 
-struct Font *loadFont(char *filename, int width, int height) {
-	struct Font *font = malloc(sizeof(struct Font));
-	if (!font) {
-		return 0;
-	}
-
+int fontInit(struct Font *font, const char *filename, int width, int height) {
+	assert(font && "The font is null.");
 	FT_Error error;
 	FT_Library library;
 	if (error = FT_Init_FreeType(&library)) {
 		fprintf(stderr, "Could not initialize FreeType.\n");
 		free(font);
-		return 0;
+		return 1;
 	}
 	// FT_Face face;
 	// FT_New_Memory_Face(ft, data, dataSize, 0, &face);
 	if (error = FT_New_Face(library, filename, 0, &font->face)) {
 		fprintf(stderr, "Could not open font.\n");
-		return 0;
+		return 1;
 	}
 	const int fontSize = 24;
 	if (error = FT_Set_Char_Size(font->face, fontSize * 64, 0, 0, 0)) {
 		fprintf(stderr, "Could not set sizes.\n");
-		return 0;
+		return 1;
 	}
 
 	FT_Size_Metrics metrics = font->face->size->metrics;
@@ -37,7 +33,7 @@ struct Font *loadFont(char *filename, int width, int height) {
 	font->dataHeight = height;
 	if (!(font->data = malloc(4 * width * height))) {
 		fprintf(stderr, "Could not allocate image data.\n");
-		return 0;
+		return 1;
 	}
 	// Fill the texture with white
 	memset(font->data, 0xFF, 4 * width * height);
@@ -57,7 +53,7 @@ struct Font *loadFont(char *filename, int width, int height) {
 	font->library = library;
 	font->hbFont = hb_ft_font_create_referenced(font->face);
 
-	return font;
+	return 0;
 }
 
 struct Glyph *fontGetGlyph(struct Font *font, unsigned int codepoint) {
@@ -125,5 +121,4 @@ void fontDestroy(struct Font *font) {
 	free(font->nodes);
 	FT_Done_Face(font->face);
 	FT_Done_FreeType(font->library);
-	free(font);
 }
