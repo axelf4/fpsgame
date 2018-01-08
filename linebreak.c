@@ -5,7 +5,6 @@
 #include <hb.h>
 #include <hb-ft.h>
 #include <assert.h>
-
 #include "unicodeTables.h"
 
 enum UnicodeType getUnicodeType(int codepoint) {
@@ -151,104 +150,72 @@ static const int lineBreakIndices[] = {
 	INDEX_ZERO_WIDTH_JOINER
 };
 
-// placeholder function for complex break analysis
-// cls - resolved line break class, may differ from pcls[0]
-// pcls - pointer to array of line breaking classes (input)
-// pbrk - pointer to array of line breaking opportunities (output)
-// cch - remaining length of input
-/*int findComplexBreak(enum break_class cls, enum break_class *pcls, enum break_action *pbrk, int cch) {
-  if (!cch) return 0;
-  for (int i = 1; i < cch; ++i) {
-// .. do complex break analysis here
-// and report any break opportunities in pbrk ..
-pbrk[i-1] = PROHIBITED_BRK; // by default, no break
-
-if (pcls[i] != SA) break;
-}
-return i;
-}*/
-
-// handle spaces separately, all others by table
-// pcls - pointer to array of line breaking classes (input)
-// pbrk - pointer to array of line break opportunities (output)
-// length - number of elements in the arrays (“count of characters”) (input)
-// current index into the arrays (variable) (returned value)
 int findLineBreak(enum BreakClass *pcls, enum BreakAction *pbrk, int length) {
-	if (!length) return 0;
-
 	enum BreakClass cls = pcls[0]; // Class of 'before' character
 	// Treat SP at start of input as if it followed a WJ
 	if (cls == UNICODE_BREAK_SPACE) cls = UNICODE_BREAK_WORD_JOINER;
 	// Handle case where input starts with an LF and treat initial NL like BK
 	if (cls == UNICODE_BREAK_LINE_FEED || cls == UNICODE_BREAK_NEXT_LINE) cls = UNICODE_BREAK_MANDATORY;
 
-	// loop over all pairs in the string up to a hard break or CRLF pair
+	// Loop over all pairs in the string up to a hard break or CRLF pair
 	int i = 1;
 	for (; i < length && cls != UNICODE_BREAK_MANDATORY
 			&& (cls != UNICODE_BREAK_CARRIAGE_RETURN || pcls[i] == UNICODE_BREAK_LINE_FEED); ++i) {
-		// to handle explicit breaks, replace code from "for" loop condition
-		// above to comment below by code given in Section 7.6
-
 		// Handle BK, NL and LF explicitly
 		if (pcls[i] == UNICODE_BREAK_MANDATORY || pcls[i] == UNICODE_BREAK_NEXT_LINE || pcls[i] == UNICODE_BREAK_LINE_FEED) {
 			pbrk[i - 1] = PROHIBITED_BREAK;
 			cls = UNICODE_BREAK_MANDATORY;
 			continue;
 		}
-
 		// Handle CR explicitly
 		if(pcls[i] == UNICODE_BREAK_CARRIAGE_RETURN) {
 			pbrk[i - 1] = PROHIBITED_BREAK;
 			cls = UNICODE_BREAK_CARRIAGE_RETURN;
 			continue;
 		}
-
 		// Handle spaces explicitly
 		if (pcls[i] == UNICODE_BREAK_SPACE) {
-			pbrk[i-1] = PROHIBITED_BREAK; // apply rule LB7: × SP
-			continue; // do not update cls
+			pbrk[i - 1] = PROHIBITED_BREAK; // Apply rule LB7: × SP
+			continue; // Do not update cls
 		}
-
-		// Handle complex scripts in a separate function
+		// Handle complex scripts
 		if (pcls[i] == UNICODE_BREAK_COMPLEX_CONTEXT) {
-			return -1;
-			// i += findComplexBreak(cls, &pcls[i - 1], &pbrk[i - 1], cch - (i - 1));
-			if (i < length) cls = pcls[i];
-			continue;
+			assert(0 && "Complex scripts are unsupported.");
 		}
 
-		// Lookup pair table information in breakPairs[before, after];
+		// Lookup pair table information in breakPairs[before][after];
 		int first = lineBreakIndices[cls], second = lineBreakIndices[pcls[i]];
 		assert(first < INDEX_END_OF_TABLE && second < INDEX_END_OF_TABLE && "Index out of bounds.");
-		enum BreakAction brk = breakPairs[lineBreakIndices[cls]][lineBreakIndices[pcls[i]]];
-		pbrk[i - 1] = brk; // save break action in output array
+		enum BreakAction brk = breakPairs[first][second];
 
-		// Resolve indirect break
-		// Handle breaks involving a combining mark (see Section 7.5)
-
-		if (brk == INDIRECT_BREAK) {
-			// If context is A SP + B
-			if (pcls[i - 1] == UNICODE_BREAK_SPACE)
-				pbrk[i - 1] = INDIRECT_BREAK; // Break opportunity
-			else
-				pbrk[i - 1] = PROHIBITED_BREAK; // No break opportunity
-		} else if (brk == COMBINING_INDIRECT_BREAK) { // Resolve combining mark break
-			pbrk[i - 1] = PROHIBITED_BREAK;             // do not break before CM
-			if (pcls[i - 1] == UNICODE_BREAK_SPACE) {
-				pbrk[i - 1] = COMBINING_INDIRECT_BREAK; // Apply rule SP ÷
-			} else                                   // apply rule LB9: X CM * -> X
-				continue;                            // do not update cls
-		} else if (brk == COMBINING_PROHIBITED_BREAK) { // This is the case OP SP* CM
-			pbrk[i - 1] = COMBINING_PROHIBITED_BREAK; // No break allowed
-			if (pcls[i - 1] != UNICODE_BREAK_SPACE)
-				continue;                          // apply rule LB9: X CM* -> X
+		// Resolve indirect break and handle breaks involving a combining mark (see Section 7.5)
+		switch (brk) {
+			default:
+				pbrk[i - 1] = brk; // Save break action in output array
+				break;
+			case INDIRECT_BREAK:
+				// Allowed break if context is A SP + B
+				pbrk[i - 1] = pcls[i - 1] == UNICODE_BREAK_SPACE ? INDIRECT_BREAK : PROHIBITED_BREAK;
+				break;
+			case COMBINING_INDIRECT_BREAK:
+				if (pcls[i - 1] == UNICODE_BREAK_SPACE) {
+					pbrk[i - 1] = COMBINING_INDIRECT_BREAK; // Apply rule SP ÷
+				} else { // Apply rule LB9: X CM * -> X
+					pbrk[i - 1] = PROHIBITED_BREAK; // Do not break before CM
+					continue; // Do not update cls
+				}
+				break;
+			case COMBINING_PROHIBITED_BREAK: // This is the case OP SP* CM
+				pbrk[i - 1] = COMBINING_PROHIBITED_BREAK; // No break allowed
+				if (pcls[i - 1] != UNICODE_BREAK_SPACE)
+					continue; // Apply rule LB9: X CM* -> X
+				break;
 		}
 
-		// Save cls of 'before' character (unless bypassed by 'continue')
-		cls = pcls[i];
+		cls = pcls[i]; // Save cls of 'before' character (unless bypassed by 'continue')
 	}
-	pbrk[i - 1] = EXPLICIT_BREAK; // Always break at the end
 
+	pbrk[i - 1] = EXPLICIT_BREAK; // Always break at the end
 	return i;
 }
 
@@ -280,34 +247,153 @@ enum GraphemeBreakType getGraphemeBreakType(int codepoint, enum UnicodeType type
 					return GB_EXTEND;
 			}
 			return GB_SPACING_MARK;
-
+		default:
+			return GB_OTHER;
 	}
-	return GB_OTHER;
 }
 
-
 int isGraphemeClusterBreak(enum GraphemeBreakType previous, enum GraphemeBreakType current) {
-	// GB3. CR X LF
+	// GB3. CR × LF
 	if (previous == GB_CR && current == GB_LF) return 0;
 	// GB4. (Control | CR | LF) ÷
 	if (previous == GB_CONTROL || previous == GB_CR || previous == GB_LF) return 1;
 	// GB5. ÷ (Control | CR | LF)
 	if (current == GB_CONTROL || current == GB_CR || current == GB_LF) return 1;
-	// GB6. L X (L | V | LV | LVT)
-	// TODO
-	// GB7. (LV | V) X (V | T)
-	// TODO
-	// GB8. (LVT | T) X (T)
-	// TODO
-	// GB9. X (Extend | ZWJ)
+	// GB6. L × (L | V | LV | LVT)
+	if (previous == GB_L && (current == GB_L || current == GB_V || current == GB_LV || current == GB_LVT)) return 0;
+	// GB7. (LV | V) × (V | T)
+	if ((previous == GB_LV || previous == GB_V) && (current == GB_V || current == GB_T)) return 0;
+	// GB8. (LVT | T) × (T)
+	if ((previous == GB_LVT || previous == GB_T) && current == GB_T) return 0;
+	// GB9. × (Extend | ZWJ)
 	if (current == GB_EXTEND || current == GB_ZWJ) return 0;
-	// GB9a. X SpacingMark
+	// GB9a. × SpacingMark
 	if (current == GB_SPACING_MARK) return 0;
-	// GB9b. Prepend X
+	// GB9b. Prepend ×
 	if (previous == GB_PREPEND) return 0;
-	// TODO implement rest
 	// GB10. Any ÷ Any
 	return 1;
+}
+
+/**
+ * @param glyphCount
+ */
+static void calcLogicalSizes(int *logicalSizes, int glyphCount,
+		hb_glyph_info_t glyphInfo[static glyphCount], hb_glyph_position_t glyphPos[static glyphCount],
+		unsigned int itemOffset, int itemLength) {
+	logicalSizes += itemOffset;
+	for (int i = 0; i < glyphCount;) {
+		int cluster = glyphInfo[i].cluster;
+		int clusterSize = 0;
+		for (;; ++i) {
+			if (i == glyphCount) {
+				int numChars = itemLength - cluster;
+				for (int j = cluster; j < itemLength; ++j)
+					logicalSizes[j - itemOffset] = clusterSize / numChars;
+				break;
+			}
+			if (glyphInfo[i].cluster > cluster) {
+				int numChars = glyphInfo[i].cluster - cluster;
+				for (int j = cluster; j < glyphInfo[i].cluster; ++j)
+					logicalSizes[j - itemOffset] = clusterSize / numChars;
+				// Add residue to first char
+				logicalSizes[cluster - itemOffset] += clusterSize % numChars;
+				break;
+			}
+			clusterSize += glyphPos[i].x_advance / 64;
+		}
+	}
+}
+
+struct Range {
+	/** A HarfBuzz buffer holding the glyphs of this range. */
+	hb_buffer_t *buffer;
+	/** The inclusive start index of the glyph range. */
+	unsigned int start,
+				 /** The exclusive end index of the glyph range. */
+				 end;
+
+	struct Range *prevLineEnd;
+};
+
+/**
+ * Returns whether a break is allowed before the codepoint at index i.
+ */
+static int isBreakAllowed(int i, enum BreakAction *pbrk) {
+	if (i == 0) return 0;
+	/*if (charBreaks) {
+		// TODO cant break before spaces
+		const char *text = layout->text; // TODO utf-8
+		enum GraphemeBreakType previous = getGraphemeBreakType(text[index - 1], getUnicodeType(text[index - 1])),
+							   current = getGraphemeBreakType(text[index], getUnicodeType(text[index]));
+		return isGraphemeClusterBreak(previous, current);
+	}*/
+	enum BreakAction action = pbrk[i - 1];
+	return action == DIRECT_BREAK || action == INDIRECT_BREAK || action == COMBINING_INDIRECT_BREAK || action == EXPLICIT_BREAK;
+}
+
+/**
+ * Returns whether it's safe to break without reshaping before the given glyph.
+ */
+static int isSafeToBreakBefore(hb_glyph_info_t *glyphInfos, int i) {
+	return i == 0 ? 1 // At the start of the run
+		: glyphInfos[i - 1].cluster == glyphInfos[i].cluster ? 0 // Not at a cluster boundary
+		: (hb_glyph_info_get_glyph_flags(glyphInfos + i) & HB_GLYPH_FLAG_UNSAFE_TO_BREAK) == 0;
+}
+
+struct BreakSpot {
+	int i;
+	int safe : 1;
+	/** The glyph index to break on, or 0. */
+	int glyphIndex;
+};
+
+/**
+ * Returns the glyph index to split around if applicable.
+ */
+static struct BreakSpot getBreakSpotFromIndex(struct Range run, int i) {
+	unsigned int glyphCount;
+	hb_glyph_info_t *glyphInfos = hb_buffer_get_glyph_infos(run.buffer, &glyphCount);
+
+	for (int j = run.start; j < run.end; ++j) {
+		hb_glyph_info_t info = glyphInfos[j];
+
+		if (info.cluster == i) {
+			int safe = isSafeToBreakBefore(glyphInfos, i);
+			return (struct BreakSpot) { i, safe, j };
+		} else if (info.cluster > i) {
+			if (i == run.start) {
+				// Break last run: need reshape
+				// return (struct BreakSpot) { runIndex - 1, i, 0, 0 };
+				assert(0 && "This shouldn't happen.");
+			} else {
+				// Inside a cluster: need reshape
+				return (struct BreakSpot) { i, 0, 0 };
+			}
+		}
+	}
+
+	// Else break last run
+	return (struct BreakSpot) { i, 0, 0 };
+}
+
+static struct Range shapeRange(hb_font_t *font, const char *text, int textLength, unsigned int itemOffset, int itemLength) {
+	hb_buffer_t *buffer = hb_buffer_create();
+	hb_buffer_set_direction(buffer, HB_DIRECTION_LTR);
+	hb_buffer_add_utf8(buffer, text, textLength, itemOffset, itemLength);
+	hb_buffer_guess_segment_properties(buffer);
+	hb_shape(font, buffer, NULL, 0);
+
+	unsigned int glyphCount;
+	(void) hb_buffer_get_glyph_infos(buffer, &glyphCount);
+	return (struct Range) { buffer, 0, glyphCount };
+}
+
+static void calcLogicalSizesOfRun(int *logicalSizes, struct Range run, unsigned int itemOffset, int itemLength) {
+	unsigned int glyphCount;
+	hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(run.buffer, &glyphCount);
+	hb_glyph_position_t *pos = hb_buffer_get_glyph_positions(run.buffer, NULL);
+	calcLogicalSizes(logicalSizes, run.end - run.start, infos + run.start, pos + run.start, itemOffset, itemLength);
 }
 
 static int glyphStringGetWidth(struct GlyphString *glyphs) {
@@ -318,250 +404,107 @@ static int glyphStringGetWidth(struct GlyphString *glyphs) {
 	return width;
 }
 
-static struct LayoutItem *splitItem(struct LayoutItem *item, int index) {
-	struct LayoutItem *newItem = malloc(sizeof(struct LayoutItem));
-	if (!newItem) {
-		return 0;
-	}
-	newItem->offset = item->offset;
-	newItem->length = index;
-	newItem->glyphs = 0;
+static void addLineFromRun(struct Layout *layout, struct Range run) {
+	if (run.prevLineEnd) addLineFromRun(layout, *run.prevLineEnd);
 
-	item->offset += index;
-	item->length -= index;
+	hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(run.buffer, NULL);
+	hb_glyph_position_t *pos = hb_buffer_get_glyph_positions(run.buffer, NULL);
 
-	return newItem;
-}
-
-static void shapeItem(struct Layout *layout, struct LayoutItem *item, int *logicalWidths) {
-	struct Font *font = layout->font;
-	const char *paragraphText = layout->text;
-	int paragraphLength = layout->length, itemLength = item->length;
-	unsigned int itemOffset = item->offset;
-
-	// TODO recycle buffer
-	hb_buffer_t *buffer = hb_buffer_create();
-	// hb_buffer_reset(buffer);
-	hb_buffer_set_direction(buffer, HB_DIRECTION_LTR);
-	// hb_buffer_set_language(buffer, hb_language_from_string("en", strlen("en")));
-	hb_buffer_add_utf8(buffer, paragraphText, paragraphLength, itemOffset, itemLength);
-	hb_buffer_guess_segment_properties(buffer);
-	hb_shape(font->hbFont, buffer, NULL, 0);
-	unsigned int glyphCount;
-	hb_glyph_info_t *glyphInfo = hb_buffer_get_glyph_infos(buffer, &glyphCount);
-	hb_glyph_position_t *glyphPos = hb_buffer_get_glyph_positions(buffer, 0);
-
-	struct GlyphString *glyphs = malloc(sizeof(struct GlyphString) + sizeof(struct GlyphInfo) * glyphCount);
-	glyphs->length = glyphCount;
-	for (int i = 0; i < glyphCount; ++i) {
-		struct GlyphInfo info;
-		/*char glyphName[30];
-		  if (FT_Get_Glyph_Name(font->face, glyphInfo[i].codepoint, glyphName, sizeof glyphName) == 0) {
-		  printf("codepoint: %d (%s), width: %d, xoffset: %d, yoffset: %d, cluster: %d\n", glyphInfo[i].codepoint, glyphName, glyphPos[i].x_advance / 64, glyphPos[i].x_offset / 64, glyphPos[i].y_offset / 64, glyphInfo[i].cluster);
-		  }*/
-		info.glyph = glyphInfo[i].codepoint;
-		info.width = glyphPos[i].x_advance / 64;
-		info.xOffset = glyphPos[i].x_offset / 64;
-		info.yOffset = glyphPos[i].y_offset / 64;
-		glyphs->infos[i] = info;
-
-	}
-	item->glyphs = glyphs;
-
-	if (logicalWidths) {
-		for (int i = 0; i < glyphCount;) {
-			int cluster = glyphInfo[i].cluster;
-			int clusterWidth = 0;
-			for (;; ++i) {
-				if (i == glyphCount) {
-					int numChars = itemLength - cluster;
-					for (int j = cluster; j < itemLength; ++j) {
-						logicalWidths[j - item->offset] = clusterWidth / numChars;
-					}
-					break;
-				}
-				if (glyphInfo[i].cluster > cluster) {
-					int numChars = glyphInfo[i].cluster - cluster;
-					for (int j = cluster; j < glyphInfo[i].cluster; ++j) {
-						logicalWidths[j - item->offset] = clusterWidth / numChars;
-					}
-					logicalWidths[cluster - item->offset] += clusterWidth % numChars; // Add residue to first char
-					break;
-				}
-				clusterWidth += glyphPos[i].x_advance / 64;
-			}
-		}
-	}
-
-	hb_buffer_destroy(buffer);
-}
-
-static int canBreakAt(struct Layout *layout, int index, enum BreakAction *pbrk, int charBreaks) {
-	if (index == 0) return 0;
-	// TODO cant break before spaces
-	if (charBreaks) {
-		const char *text = layout->text; // TODO utf-8
-		enum GraphemeBreakType previous = getGraphemeBreakType(text[index - 1], getUnicodeType(text[index - 1])),
-							   current = getGraphemeBreakType(text[index], getUnicodeType(text[index]));
-		return isGraphemeClusterBreak(previous, current);
-	}
-	enum BreakAction action = pbrk[index - 1];
-	return action == DIRECT_BREAK || action == INDIRECT_BREAK || action == COMBINING_INDIRECT_BREAK || action == EXPLICIT_BREAK;
-}
-
-static struct LayoutLine *createLine(struct Layout *layout) {
 	struct LayoutLine *line = layout->lines + layout->lineCount++;
 	line->itemCount = 0;
-	return line;
+	struct LayoutItem *item = malloc(sizeof(struct LayoutItem));
+	line->items[line->itemCount++] = item;
+
+	unsigned int glyphCount = run.end - run.start;
+	struct GlyphString *glyphs = item->glyphs = malloc(sizeof(struct GlyphString) + sizeof(struct GlyphInfo) * glyphCount);
+	glyphs->length = glyphCount;
+	for (int i = 0, j = run.start; j < run.end; ++i, ++j) {
+		glyphs->infos[i] = (struct GlyphInfo) {
+			infos[j].codepoint, pos[j].x_advance / 64,
+				pos[j].x_offset / 64, pos[j].y_offset / 64
+		};
+	}
 }
 
 void layoutLayout(struct Layout *layout) {
-	if (layout->lineCount != -1) return;
-
-	int length = layout->length;
+	hb_font_t *font = layout->font->hbFont;
 	const char *text = layout->text;
-	enum BreakClass *pcls = malloc(sizeof(enum BreakClass) * layout->length);
-	for (int i = 0; i < layout->length; ++i) {
-		pcls[i] = getBreakClass(text[i]);
+	int textLength = layout->length;
+	int remainingWidth = layout->width;
+	assert(remainingWidth != -1);
+
+	// Assign a line breaking class to each code point
+	enum BreakClass *pcls = malloc(sizeof(enum BreakClass) * textLength);
+	if (!pcls) assert(0);
+	for (int i = 0; i < textLength; ++i) pcls[i] = getBreakClass(text[i]);
+	enum BreakAction *pbrk = malloc(sizeof(enum BreakAction) * textLength);
+	if (!pbrk) assert(0);
+	// Per codepoint advances
+	int *logicalSizes;
+	if (!(logicalSizes = malloc(textLength * sizeof *logicalSizes))) {
+		fprintf(stderr, "Error\n");
+		return;
 	}
-	enum BreakAction *pbrk = malloc(sizeof(enum BreakAction) * layout->length);
-	int ich = findLineBreak(pcls, pbrk, length);
-	/*const char *breakActionToString[6] = {
-		"DIRECT_BREAK",
-		"INDIRECT_BREAK",
-		"COMBINING_INDIRECT_BREAK",
-		"COMBINING_PROHIBITED_BREAK",
-		"PROHIBITED_BREAK",
-		"EXPLICIT_BREAK"
-	};
-	for (int i = 0; i < len; ++i) {
-		printf("ch: %c break action: %d - %s.\n", text[i], pbrk[i], breakActionToString[pbrk[i]]);
-	}*/
 
-	// TODO dynamically grow stack
-	struct LayoutItem **itemStack = malloc(sizeof(struct LayoutItem *) * 10);
-	int itemStackTop = 0;
+	struct Range runs[64]; // TODO dynamically grow
+	struct Range *runPointer = runs; // Pointer to next run
 
-	// TODO itemize
-	struct LayoutItem *item0 = malloc(sizeof(struct LayoutItem));
-	item0->offset = 0;
-	item0->length = length;
-	item0->glyphs = 0;
+	// Itemize - first run is special
+	*runPointer++ = shapeRange(font, text, textLength, 0, textLength);
+	calcLogicalSizesOfRun(logicalSizes, runs[0], 0, textLength);
 
-	itemStack[itemStackTop++] = item0;
+	int i = 0;
+	while (i < textLength) {
+		int lineStart = i; // Codepoint index of the start of current line
+		int explicitBreak = findLineBreak(pcls + i, pbrk + i, textLength - i) + i;
+		// printf("top of main loop, i=%d, explicitBreak=%d\n", i, explicitBreak);
+		for (int width = 0; i < explicitBreak; ++i) {
+			width += logicalSizes[i];
+			if (width > remainingWidth) break;
+		}
+		if (i >= textLength) goto finishLayout;
+
+		struct BreakSpot breakSpot;
+		// Search backwards for break opportunity
+		while (i > lineStart) {
+			if (isBreakAllowed(i, pbrk)) {
+				// Find glyph cluster from codepoint index i
+				breakSpot = getBreakSpotFromIndex(runs[0], i);
+				goto foundBreak;
+			}
+			--i;
+		}
+		assert(0 && "Emergency mode not yet implemented.");
+
+foundBreak:
+		// Break before i
+		if (breakSpot.safe) {
+			struct Range *end = runPointer++;
+			*end = (struct Range) { hb_buffer_reference(runs[0].buffer), runs[0].start, breakSpot.glyphIndex, runs[0].prevLineEnd };
+			runs[0] = (struct Range) { hb_buffer_reference(runs[0].buffer), breakSpot.glyphIndex, runs[0].end, end };
+		} else {
+			// Reshaping is necessary
+			struct Range run = runs[0], *nextRun = 0;
+			unsigned int itemOffset = hb_buffer_get_glyph_infos(run.buffer, NULL)[run.start].cluster;
+			hb_buffer_destroy(runs[0].buffer);
+			struct Range *last = runPointer++;
+			*last = shapeRange(font, text, textLength, itemOffset, i - itemOffset);
+			last->prevLineEnd = runs[0].prevLineEnd;
+
+			int itemLength = (nextRun ? hb_buffer_get_glyph_infos(nextRun->buffer, NULL)[nextRun->start].cluster : textLength) - i;
+			runs[0] = shapeRange(font, text, textLength, i, itemLength);
+			runs[0].prevLineEnd = last;
+			calcLogicalSizesOfRun(logicalSizes, runs[0], i, itemLength);
+		}
+	}
+
+finishLayout:
+	free(logicalSizes);
+	free(pbrk);
+	free(pcls);
 
 	layout->lineCount = 0;
-	struct LayoutLine *line = createLine(layout);
-	int remainingWidth = layout->width;
-
-	int haveBreak = 0,
-		breakRemainingWidth = 0,
-		breakItemIndex = 0;
-
-	while (itemStackTop > 0) {
-		struct LayoutItem *item = itemStack[--itemStackTop];
-		int *logicalWidths = malloc(sizeof(int) * item->length); // TODO have one single for the whole layout
-		if (item->glyphs) {
-			assert(0 && "This shouldn't happen.");
-		}
-		shapeItem(layout, item, logicalWidths);
-		// Width of item
-		int width = glyphStringGetWidth(item->glyphs);
-		// printf("%d needs to fit into %d.\n", width, remainingWidth);
-		int forceFit = !haveBreak;
-
-		// Infinite width
-		if (remainingWidth < 0) {
-			line->items[line->itemCount++] = item;
-			continue;
-		}
-
-		int retryingWithCharBreaks = 0;
-		int breakWidth = 0, breakNumChars = -1;
-retryBreak:
-		breakWidth = width;
-		breakNumChars = -1;
-		for (int i = 0, width = 0; i < item->length; ++i) {
-			if (width > remainingWidth && breakNumChars != -1)
-				break;
-			if (canBreakAt(layout, item->offset + i, pbrk, retryingWithCharBreaks)
-					&& (i > 0 || line->itemCount)) {
-				breakNumChars = i;
-				breakWidth = width;
-			}
-			width += logicalWidths[i];
-		}
-
-		if (forceFit && breakWidth > remainingWidth && !retryingWithCharBreaks) {
-			retryingWithCharBreaks = 1;
-			goto retryBreak;
-		}
-
-		if (width <= remainingWidth) {
-			// All fit
-			// printf("All fit.\n");
-			if (breakNumChars != -1) {
-				haveBreak = 1;
-				breakRemainingWidth = remainingWidth;
-				breakItemIndex = line->itemCount - 1;
-			}
-			remainingWidth -= width;
-			line->items[line->itemCount++] = item;
-		} else if (breakWidth <= remainingWidth || !haveBreak) {
-			// TODO remove width of space character at end of item before checking
-			if (breakNumChars == item->length) {
-				remainingWidth -= width;
-				line->items[line->itemCount++] = item;
-			} else {
-				if (breakNumChars > 0) {
-					// Some fit
-					// printf("Some fit.\n");
-					struct LayoutItem *newItem = splitItem(item, breakNumChars);
-					shapeItem(layout, newItem, 0);
-					line->items[line->itemCount++] = newItem;
-					remainingWidth -= glyphStringGetWidth(newItem->glyphs);
-				} else {
-					// printf("Empty fit.\n");
-				}
-
-				free(item->glyphs);
-				item->glyphs = 0;
-				itemStack[itemStackTop++] = item;
-			}
-
-			line = createLine(layout);
-			remainingWidth = layout->width;
-		} else {
-			assert(0 && "Not yet implemented.");
-			assert(haveBreak && "Should have a break spot.");
-			// None fit
-			// printf("None fit.\n");
-			remainingWidth = breakRemainingWidth;
-
-			free(item->glyphs);
-			item->glyphs = 0;
-			itemStack[itemStackTop++] = item; // Add item back on stack
-
-			/*struct LayoutItem *newItem = splitItem(item, breakNumChars);
-			  free(item->glyphs);
-			  item->glyphs = 0;*/
-
-			// Back up over unused items to item where there is a break
-			// for (int i = breakItemIndex + 1; i < line->itemCount; ++i) {
-			for (int i = itemStackTop; i-- > breakItemIndex;) {
-				itemStack[itemStackTop++] = line->items[i];
-			}
-			line->itemCount = breakItemIndex;
-
-			shapeItem(layout, item, 0);
-			line->items[line->itemCount++] = item;
-			remainingWidth -= glyphStringGetWidth(item->glyphs);
-		}
-
-	free(logicalWidths);
-	}
-
-	free(itemStack);
+	addLineFromRun(layout, runs[0]);
 }
 
 void layoutInit(struct Layout *layout, struct Font *font) {
@@ -596,7 +539,7 @@ void layoutSetHeight(struct Layout *layout, int height) {
 }
 
 void layoutGetSize(struct Layout *layout, int *width, int *height) {
-	layoutLayout(layout);
+	if (layout->lineCount == -1) layoutLayout(layout);
 	int layoutWidth = 0;
 	int layoutHeight = 0;
 	for (int i = 0; i < layout->lineCount; ++i) {

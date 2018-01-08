@@ -1,7 +1,9 @@
 #ifndef LINEBREAK_H
 #define LINEBREAK_H
 
-// TODO rename to GeneralCategory
+#include <hb.h>
+#include "font.h"
+
 typedef enum UnicodeType {
 	// Normative
 	UNICODE_UPPERCASE_LETTER,
@@ -87,6 +89,9 @@ typedef enum BreakClass {
 
 /**
  * Returns the break class of the specified codepoint.
+ *
+ * @param codepoint The codepoint.
+ * @return The Unicode break class.
  */
 enum BreakClass getBreakClass(int codepoint);
 
@@ -99,9 +104,17 @@ typedef enum BreakAction {
 	EXPLICIT_BREAK
 } BreakAction;
 
+/**
+ * Finds line break opportunities up to a explicit line break.
+ *
+ * @param pcls Pointer to array of input line breaking classes.
+ * @param pbrk Pointer to array of output line break opportunities.
+ * @param length Number of elements in the arrays.
+ * @return The current index into the arrays.
+ */
 int findLineBreak(enum BreakClass *pcls, enum BreakAction *pbrk, int length);
 
-typedef enum GraphemeBreakType {
+enum GraphemeBreakType {
 	GB_CR,
 	GB_LF,
 	GB_CONTROL,
@@ -120,13 +133,11 @@ typedef enum GraphemeBreakType {
 	GB_GLUE_AFTER_ZWJ,
 	GB_BASE_GAZ,
 	GB_OTHER
-} GraphemeBreakType;
+};
 
 enum GraphemeBreakType getGraphemeBreakType(int codepoint, enum UnicodeType);
 
 int isGraphemeClusterBreak(enum GraphemeBreakType previous, enum GraphemeBreakType current);
-
-#include "font.h"
 
 struct GlyphInfo {
 	int glyph;
@@ -161,6 +172,7 @@ struct Layout {
 	int lineCount;
 };
 
+// TODO take string length and string as arguments
 void layoutLayout(struct Layout *layout);
 
 void layoutInit(struct Layout *layout, struct Font *font);
