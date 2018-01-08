@@ -166,8 +166,8 @@ static int requestFocusInDescendants(struct GuiContext *context, struct Widget *
 int widgetRequestFocus(struct GuiContext *context, struct Widget *widget) {
 	// If an ancestor is blocking focus
 	struct Widget *parent = widget;
-	while ((parent = parent->parent))
-		if (parent->focusability == FOCUS_BLOCK_DESCENDANTS)
+	while (parent->parent)
+		if ((parent = parent->parent)->focusability == FOCUS_BLOCK_DESCENDANTS)
 			return 0;
 
 	// If the root of the isnt the same as the context
