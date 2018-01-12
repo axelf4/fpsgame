@@ -143,6 +143,10 @@ static void freeCB(void *ptr) {
 	free(ptr);
 }
 
+static const struct Material defaultMaterial = {
+	{ 1.0f, 1.0f, 1.0f }
+};
+
 struct Model *loadModelFromObj(char *path) {
 	printf("loading model: %s\n", path);
 	char *buffer = readFile(path);
@@ -223,6 +227,15 @@ existingVertex:;
 	struct ObjGroup defaultGroup = { 0, -1, 0 };
 	if (!obj.groupHead) obj.groupHead = &defaultGroup;
 
+	model->materials = malloc(sizeof(struct Material) * obj.numMaterials);
+	for (int i = 0; i < obj.numMaterials; ++i) {
+		struct MtlMaterial *mtl = obj.materials + i;
+		struct Material *material = model->materials + i;
+		material->diffuse[0] = mtl->diffuse[0];
+		material->diffuse[1] = mtl->diffuse[1];
+		material->diffuse[2] = mtl->diffuse[2];
+	}
+
 	// Count the number of parts
 	int numParts = 0;
 	struct ObjGroup *group = obj.groupHead;
@@ -233,21 +246,12 @@ existingVertex:;
 		struct ModelPart *part = parts + i;
 		part->offset = group->faceIndex * 3;
 		part->count = ((group->next ? group->next->faceIndex : obj.numFaces) - group->faceIndex) * 3;
-		part->materialIndex = group->materialIndex;
+		part->material = group->materialIndex >= 0 ? model->materials + group->materialIndex : &defaultMaterial;
 
 		group = group->next;
 	}
 	model->numParts = numParts;
 	model->parts = parts;
-
-	model->materials = malloc(sizeof(struct Material) * obj.numMaterials);
-	for (int i = 0; i < obj.numMaterials; ++i) {
-		struct MtlMaterial *mtl = obj.materials + i;
-		struct Material *material = model->materials + i;
-		material->diffuse[0] = mtl->diffuse[0];
-		material->diffuse[1] = mtl->diffuse[1];
-		material->diffuse[2] = mtl->diffuse[2];
-	}
 
 	// Estimate the radius
 	float xMax = -INFINITY, yMax = -INFINITY, zMax = -INFINITY;

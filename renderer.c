@@ -663,7 +663,6 @@ static void drawEntities(struct Renderer *renderer, MATRIX viewProjection, struc
 	ALIGN(16) float mv[16];
 	struct EntityManager *manager = renderer->manager;
 	struct Model *lastModel = 0;
-	float defaultColor[3] = { 1.0f, 1.0f, 1.0f };
 	for (int j = 0; j < MAX_ENTITIES; ++j) {
 		if ((manager->entityMasks[j] & RENDER_MASK) == RENDER_MASK) {
 			struct Model *model = manager->models[j].model;
@@ -684,8 +683,7 @@ static void drawEntities(struct Renderer *renderer, MATRIX viewProjection, struc
 			glUniformMatrix4fv(renderer->modelUniform, 1, GL_FALSE, MatrixGet(mv, modelMatrix));
 			for (int i = 0; i < model->numParts; ++i) {
 				struct ModelPart *part = model->parts + i;
-				struct Material *material = part->materialIndex >= 0 ? model->materials + part->materialIndex : 0;
-				glUniform3fv(renderer->colorUniform, 1, material ? material->diffuse : defaultColor);
+				glUniform3fv(renderer->colorUniform, 1, part->material->diffuse);
 				glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT, (const GLvoid *) (uintptr_t) part->offset);
 			}
 		}

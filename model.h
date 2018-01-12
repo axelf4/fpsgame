@@ -9,7 +9,7 @@ struct Material {
 
 typedef struct ModelPart {
 	unsigned int count, offset;
-	int materialIndex;
+	const struct Material *material;
 } ModelPart;
 
 typedef struct Model {
