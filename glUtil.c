@@ -5,18 +5,22 @@
 #include <assert.h>
 
 char *readFile(const char *filename) {
-	char *buffer = 0;
+	char *buffer = NULL;
 	FILE *f = fopen(filename, "rb");
-	if (f) {
-		fseek(f, 0, SEEK_END);
-		long length = ftell(f);
-		rewind(f); // fseek(f, 0, SEEK_SET);
-		if ((buffer = malloc(length + 1))) {
-			fread(buffer, length, 1, f);
-			fclose(f);
-			buffer[length] = 0;
-		}
+	if (!f) goto error_file;
+	fseek(f, 0, SEEK_END);
+	long length = ftell(f);
+	rewind(f); // fseek(f, 0, SEEK_SET);
+	if (!(buffer = malloc(length + 1))) goto error_malloc;
+	if (fread(buffer, length, 1, f) != 1) {
+		free(buffer);
+		buffer = NULL;
+		goto error_malloc;
 	}
+	buffer[length] = 0;
+error_malloc:
+	fclose(f);
+error_file:
 	return buffer;
 }
 
